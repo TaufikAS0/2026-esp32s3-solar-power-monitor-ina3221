@@ -35,9 +35,10 @@ WebUi gWebUi(gWifiService,
              gCurrentState);
 
 uint32_t gLastHistorySampleMs = 0;
+uint32_t gLastBackendCaptureMs = 0;
 
 void updateHistory(uint32_t nowMs) {
-  if (nowMs - gLastHistorySampleMs < gWifiService.config().sampleIntervalMs) {
+  if (nowMs - gLastHistorySampleMs < gWifiService.config().historyIntervalMs) {
     return;
   }
 
@@ -53,6 +54,14 @@ void updateHistory(uint32_t nowMs) {
                      gInaSensors.solar().currentMa,
                      gInaSensors.battery().currentMa,
                      gInaSensors.load().currentMa);
+}
+
+void updateBackendCapture(uint32_t nowMs) {
+  if (nowMs - gLastBackendCaptureMs < gWifiService.config().sampleIntervalMs) {
+    return;
+  }
+
+  gLastBackendCaptureMs = nowMs;
   gBackendSender.captureSample(nowMs);
 }
 
@@ -68,7 +77,7 @@ void setup() {
   gWifiService.begin();
   gLedPwmController.begin(gWifiService.config());
   gInaSensors.applyConfig(gWifiService.config());
-  gInaSensors.setSampleIntervalMs(gWifiService.config().sampleIntervalMs);
+  gInaSensors.setSampleIntervalMs(gWifiService.config().sensorPollIntervalMs);
   gInaSensors.begin();
   analysisInit(gAnalysis, millis());
   updateSystemState();
@@ -91,6 +100,7 @@ void loop() {
                  gAnalysis);
   updateSystemState();
   updateHistory(nowMs);
+  updateBackendCapture(nowMs);
   gOtaService.update();
   gWebUi.update();
   gSerialReporter.update(nowMs, gWifiService, gInaSensors.solar(), gInaSensors.battery(), gCurrentState);

@@ -10,7 +10,13 @@ struct DeviceConfig {
   String wifiPass;
   String deviceId;
   String lineId;
+  uint32_t sensorPollIntervalMs = Config::kDefaultSensorPollIntervalMs;
   uint32_t sampleIntervalMs = 1000;
+  uint32_t historyIntervalMs = Config::kDefaultHistoryIntervalMs;
+  uint32_t chartPointLimit = Config::kDefaultChartPointLimit;
+  uint32_t inaAveragingSamples = Config::kDefaultInaAveragingSamples;
+  uint32_t inaBusConvTimeUs = Config::kDefaultInaBusConvTimeUs;
+  uint32_t inaShuntConvTimeUs = Config::kDefaultInaShuntConvTimeUs;
   bool serverEnabled = true;
   bool otaEnabled = false;
   String apiBase;
@@ -50,7 +56,13 @@ public:
   bool saveWifiConfig(const String& ssid, const String& password);
   bool saveDeviceConfig(const String& deviceId, const String& lineId);
   bool saveOtaConfig(bool enabled);
-  bool saveRuntimeConfig(uint32_t sampleIntervalMs);
+  bool saveRuntimeConfig(uint32_t sampleIntervalMs,
+                         uint32_t sensorPollIntervalMs,
+                         uint32_t historyIntervalMs,
+                         uint32_t chartPointLimit,
+                         uint32_t inaAveragingSamples,
+                         uint32_t inaBusConvTimeUs,
+                         uint32_t inaShuntConvTimeUs);
   bool saveBatteryConfig(const String& profileId, uint32_t fullMv, uint32_t emptyMv);
   bool saveFlowConfig(uint32_t solarActiveThresholdMw,
                       uint32_t loadActiveThresholdMw,
@@ -98,7 +110,12 @@ private:
   String buildDefaultDeviceId_() const;
   String buildAccessPointSsid_() const;
   String normalizeApiBase_(String value) const;
+  uint32_t normalizeSensorPollIntervalMs_(uint32_t value) const;
   uint32_t normalizeSampleIntervalMs_(uint32_t value) const;
+  uint32_t normalizeHistoryIntervalMs_(uint32_t value) const;
+  uint32_t normalizeChartPointLimit_(uint32_t value) const;
+  uint32_t normalizeInaAveragingSamples_(uint32_t value) const;
+  uint32_t normalizeInaConversionTimeUs_(uint32_t value) const;
   uint32_t normalizeFlowThresholdMw_(uint32_t value) const;
   uint32_t normalizeLedPwmFrequencyHz_(uint32_t value) const;
   uint32_t normalizeLedPwmDutyPercent_(uint32_t value) const;

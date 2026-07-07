@@ -13,6 +13,24 @@ struct InaReading {
   float powerMw = 0.0f;
 };
 
+struct InaTimingProfile {
+  uint32_t averagingSamples = Config::kDefaultInaAveragingSamples;
+  uint32_t busConvTimeUs = Config::kDefaultInaBusConvTimeUs;
+  uint32_t shuntConvTimeUs = Config::kDefaultInaShuntConvTimeUs;
+  uint16_t configRegister = Config::kDefaultIna3221ConfigValue;
+  uint32_t frameTimeUs = 0;
+  float estimatedChannelRateHz = 0.0f;
+};
+
+uint32_t normalizeIna3221AveragingSamples(uint32_t value);
+uint32_t normalizeIna3221ConversionTimeUs(uint32_t value);
+uint16_t buildIna3221ConfigRegister(uint32_t averagingSamples,
+                                    uint32_t busConvTimeUs,
+                                    uint32_t shuntConvTimeUs);
+InaTimingProfile describeIna3221Timing(uint32_t averagingSamples,
+                                       uint32_t busConvTimeUs,
+                                       uint32_t shuntConvTimeUs);
+
 class InaSensors {
 public:
   void applyConfig(const DeviceConfig& config);
@@ -28,6 +46,9 @@ public:
   bool anyHealthy() const;
   bool loadHealthy() const;
   uint32_t lastReadMs() const;
+  uint32_t totalReadCount() const;
+  float measuredReadRateHz() const;
+  InaTimingProfile timingProfile() const;
 
 private:
   InaReading solar_;
@@ -38,11 +59,22 @@ private:
   bool loadAvailable_ = false;
   uint32_t lastReadMs_ = 0;
   uint32_t sampleIntervalMs_ = 1000;
+  uint32_t totalReadCount_ = 0;
+  uint32_t rateWindowStartMs_ = 0;
+  uint32_t rateWindowReadCount_ = 0;
+  float measuredReadRateHz_ = 0.0f;
   float solarShuntMilliOhms_ = 0.0f;
   float batteryShuntMilliOhms_ = 0.0f;
   float loadShuntMilliOhms_ = 0.0f;
+  uint32_t averagingSamples_ = Config::kDefaultInaAveragingSamples;
+  uint32_t busConvTimeUs_ = Config::kDefaultInaBusConvTimeUs;
+  uint32_t shuntConvTimeUs_ = Config::kDefaultInaShuntConvTimeUs;
+  uint16_t configRegister_ = Config::kDefaultIna3221ConfigValue;
+  bool configured_ = false;
 
   void readAll_();
+  void writeConfig_();
+  void noteRead_(uint32_t nowMs);
   void resetReading_(InaReading& reading);
 };
 

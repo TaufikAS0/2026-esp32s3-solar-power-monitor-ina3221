@@ -5,6 +5,7 @@
 
 #include "battery_profile.h"
 #include "config.h"
+#include "ina_sensors.h"
 
 void WifiService::begin() {
   preferences_.begin(Config::kPrefsNamespace, false);
@@ -106,9 +107,27 @@ bool WifiService::saveOtaConfig(bool enabled) {
   return true;
 }
 
-bool WifiService::saveRuntimeConfig(uint32_t sampleIntervalMs) {
+bool WifiService::saveRuntimeConfig(uint32_t sampleIntervalMs,
+                                    uint32_t sensorPollIntervalMs,
+                                    uint32_t historyIntervalMs,
+                                    uint32_t chartPointLimit,
+                                    uint32_t inaAveragingSamples,
+                                    uint32_t inaBusConvTimeUs,
+                                    uint32_t inaShuntConvTimeUs) {
   config_.sampleIntervalMs = normalizeSampleIntervalMs_(sampleIntervalMs);
+  config_.sensorPollIntervalMs = normalizeSensorPollIntervalMs_(sensorPollIntervalMs);
+  config_.historyIntervalMs = normalizeHistoryIntervalMs_(historyIntervalMs);
+  config_.chartPointLimit = normalizeChartPointLimit_(chartPointLimit);
+  config_.inaAveragingSamples = normalizeInaAveragingSamples_(inaAveragingSamples);
+  config_.inaBusConvTimeUs = normalizeInaConversionTimeUs_(inaBusConvTimeUs);
+  config_.inaShuntConvTimeUs = normalizeInaConversionTimeUs_(inaShuntConvTimeUs);
   saveUInt_("sample_interval_ms", config_.sampleIntervalMs);
+  saveUInt_("sensor_poll_ms", config_.sensorPollIntervalMs);
+  saveUInt_("history_interval_ms", config_.historyIntervalMs);
+  saveUInt_("chart_point_limit", config_.chartPointLimit);
+  saveUInt_("ina_avg_samples", config_.inaAveragingSamples);
+  saveUInt_("ina_bus_conv_us", config_.inaBusConvTimeUs);
+  saveUInt_("ina_shunt_conv_us", config_.inaShuntConvTimeUs);
   return true;
 }
 
@@ -240,9 +259,27 @@ void WifiService::loadConfig_() {
   config_.wifiPass = preferences_.getString("wifi_pass", "");
   config_.deviceId = preferences_.getString("device_id", "");
   config_.lineId = preferences_.getString("line_id", "");
+  config_.sensorPollIntervalMs =
+      normalizeSensorPollIntervalMs_(preferences_.getUInt("sensor_poll_ms",
+                                                          Config::kDefaultSensorPollIntervalMs));
   config_.sampleIntervalMs =
       normalizeSampleIntervalMs_(preferences_.getUInt("sample_interval_ms",
                                                       Config::kDefaultSampleIntervalMs));
+  config_.historyIntervalMs =
+      normalizeHistoryIntervalMs_(preferences_.getUInt("history_interval_ms",
+                                                       Config::kDefaultHistoryIntervalMs));
+  config_.chartPointLimit =
+      normalizeChartPointLimit_(preferences_.getUInt("chart_point_limit",
+                                                     Config::kDefaultChartPointLimit));
+  config_.inaAveragingSamples =
+      normalizeInaAveragingSamples_(preferences_.getUInt("ina_avg_samples",
+                                                         Config::kDefaultInaAveragingSamples));
+  config_.inaBusConvTimeUs =
+      normalizeInaConversionTimeUs_(preferences_.getUInt("ina_bus_conv_us",
+                                                         Config::kDefaultInaBusConvTimeUs));
+  config_.inaShuntConvTimeUs =
+      normalizeInaConversionTimeUs_(preferences_.getUInt("ina_shunt_conv_us",
+                                                         Config::kDefaultInaShuntConvTimeUs));
   config_.serverEnabled = preferences_.getBool("server_enabled", true);
   config_.otaEnabled = preferences_.getBool("ota_enabled", false);
   config_.apiBase = preferences_.getString("api_base", "");
@@ -407,6 +444,18 @@ String WifiService::normalizeApiBase_(String value) const {
   return value;
 }
 
+uint32_t WifiService::normalizeSensorPollIntervalMs_(uint32_t value) const {
+  if (value < Config::kMinSensorPollIntervalMs) {
+    return Config::kMinSensorPollIntervalMs;
+  }
+
+  if (value > Config::kMaxSensorPollIntervalMs) {
+    return Config::kMaxSensorPollIntervalMs;
+  }
+
+  return value;
+}
+
 uint32_t WifiService::normalizeSampleIntervalMs_(uint32_t value) const {
   if (value < Config::kMinSampleIntervalMs) {
     return Config::kMinSampleIntervalMs;
@@ -417,6 +466,38 @@ uint32_t WifiService::normalizeSampleIntervalMs_(uint32_t value) const {
   }
 
   return value;
+}
+
+uint32_t WifiService::normalizeHistoryIntervalMs_(uint32_t value) const {
+  if (value < Config::kMinHistoryIntervalMs) {
+    return Config::kMinHistoryIntervalMs;
+  }
+
+  if (value > Config::kMaxHistoryIntervalMs) {
+    return Config::kMaxHistoryIntervalMs;
+  }
+
+  return value;
+}
+
+uint32_t WifiService::normalizeChartPointLimit_(uint32_t value) const {
+  if (value < Config::kMinChartPointLimit) {
+    return Config::kMinChartPointLimit;
+  }
+
+  if (value > Config::kHistoryCapacity) {
+    return Config::kHistoryCapacity;
+  }
+
+  return value;
+}
+
+uint32_t WifiService::normalizeInaAveragingSamples_(uint32_t value) const {
+  return normalizeIna3221AveragingSamples(value);
+}
+
+uint32_t WifiService::normalizeInaConversionTimeUs_(uint32_t value) const {
+  return normalizeIna3221ConversionTimeUs(value);
 }
 
 uint32_t WifiService::normalizeFlowThresholdMw_(uint32_t value) const {
