@@ -1,0 +1,13 @@
+# Build artifacts
+.build-*/
+ESP32-SolarPower-CP/build/
+
+# Compile and upload logs
+*.log
+*.out.log
+*.err.log
+preprocess-*.txt
+
+# OS/editor noise
+Thumbs.db
+Desktop.ini
