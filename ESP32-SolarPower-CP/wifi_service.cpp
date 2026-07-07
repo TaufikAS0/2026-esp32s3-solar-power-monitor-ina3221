@@ -370,6 +370,13 @@ void WifiService::loadConfig_() {
     saveBool_("server_enabled", true);
     saveUInt_("sender_rollout_v1", Config::kBackendSenderRolloutVersion);
   }
+
+  const uint32_t inaRolloutVersion = preferences_.getUInt("ina_runtime_rollout_v1", 0);
+  if (inaRolloutVersion < Config::kInaRuntimeRolloutVersion) {
+    config_.inaAveragingSamples = Config::kDefaultInaAveragingSamples;
+    saveUInt_("ina_avg_samples", config_.inaAveragingSamples);
+    saveUInt_("ina_runtime_rollout_v1", Config::kInaRuntimeRolloutVersion);
+  }
 }
 
 void WifiService::saveString_(const char* key, const String& value) {

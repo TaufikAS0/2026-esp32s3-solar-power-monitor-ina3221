@@ -76,6 +76,7 @@ constexpr uint32_t kBackendResponseTimeoutMs = 650;
 constexpr uint32_t kBackendRetryMinMs = 3000;
 constexpr uint32_t kBackendRetryMaxMs = 30000;
 constexpr uint32_t kBackendSenderRolloutVersion = 2;
+constexpr uint32_t kInaRuntimeRolloutVersion = 1;
 
 constexpr uint16_t kBatteryCapacityMah = 2000;
 constexpr uint32_t kBatteryProfileMinMv = 500;
