@@ -7,9 +7,6 @@
 struct RawHistoryPoint {
   uint32_t sequence = 0;
   uint32_t timestampMs = 0;
-  float solarPowerMw = 0.0f;
-  float batteryPowerSignedMw = 0.0f;
-  float loadPowerMw = 0.0f;
   float solarVoltageV = 0.0f;
   float batteryVoltageV = 0.0f;
   float loadVoltageV = 0.0f;
@@ -21,9 +18,6 @@ struct RawHistoryPoint {
 class RawHistoryBuffer {
 public:
   void add(uint32_t timestampMs,
-           float solarPowerMw,
-           float batteryPowerSignedMw,
-           float loadPowerMw,
            float solarVoltageV,
            float batteryVoltageV,
            float loadVoltageV,

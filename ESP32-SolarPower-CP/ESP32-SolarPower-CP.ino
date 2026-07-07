@@ -59,9 +59,6 @@ void captureHistoryPoint(HistoryBuffer& buffer, uint32_t nowMs) {
 
 void captureRawHistoryPoint(RawHistoryBuffer& buffer, uint32_t nowMs) {
   buffer.add(nowMs,
-             gInaSensors.solar().powerMw,
-             computeBatteryPowerSignedMw(gInaSensors.battery(), gWifiService.config()),
-             gInaSensors.load().powerMw,
              gInaSensors.solar().loadVoltageV,
              gInaSensors.battery().loadVoltageV,
              gInaSensors.load().loadVoltageV,

@@ -1,9 +1,6 @@
 #include "raw_history_buffer.h"
 
 void RawHistoryBuffer::add(uint32_t timestampMs,
-                           float solarPowerMw,
-                           float batteryPowerSignedMw,
-                           float loadPowerMw,
                            float solarVoltageV,
                            float batteryVoltageV,
                            float loadVoltageV,
@@ -13,9 +10,6 @@ void RawHistoryBuffer::add(uint32_t timestampMs,
   RawHistoryPoint& point = points_[head_];
   point.sequence = nextSequence_++;
   point.timestampMs = timestampMs;
-  point.solarPowerMw = solarPowerMw;
-  point.batteryPowerSignedMw = batteryPowerSignedMw;
-  point.loadPowerMw = loadPowerMw;
   point.solarVoltageV = solarVoltageV;
   point.batteryVoltageV = batteryVoltageV;
   point.loadVoltageV = loadVoltageV;
