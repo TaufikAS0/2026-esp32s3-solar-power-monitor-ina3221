@@ -7,6 +7,7 @@
 #include "led_pwm_controller.h"
 #include "ota_service.h"
 #include "power_logic.h"
+#include "raw_history_buffer.h"
 #include "serial_reporter.h"
 #include "system_state.h"
 #include "web_ui.h"
@@ -19,6 +20,7 @@ InaSensors gInaSensors;
 AnalysisSnapshot gAnalysis;
 I2cScanner gI2cScanner;
 LedPwmController gLedPwmController;
+RawHistoryBuffer gRawHistoryBuffer;
 HistoryBuffer gHistoryBuffer;
 HistoryBuffer gMinuteHistoryBuffer;
 SerialReporter gSerialReporter;
@@ -32,6 +34,7 @@ WebUi gWebUi(gWifiService,
              gLedPwmController,
              gAnalysis,
              gI2cScanner,
+             gRawHistoryBuffer,
              gHistoryBuffer,
              gMinuteHistoryBuffer,
              gCurrentState);
@@ -44,6 +47,19 @@ void captureHistoryPoint(HistoryBuffer& buffer, uint32_t nowMs) {
   buffer.add(nowMs,
              gInaSensors.solar().powerMw,
              gInaSensors.battery().powerMw,
+             computeBatteryPowerSignedMw(gInaSensors.battery(), gWifiService.config()),
+             gInaSensors.load().powerMw,
+             gInaSensors.solar().loadVoltageV,
+             gInaSensors.battery().loadVoltageV,
+             gInaSensors.load().loadVoltageV,
+             gInaSensors.solar().currentMa,
+             gInaSensors.battery().currentMa,
+             gInaSensors.load().currentMa);
+}
+
+void captureRawHistoryPoint(RawHistoryBuffer& buffer, uint32_t nowMs) {
+  buffer.add(nowMs,
+             gInaSensors.solar().powerMw,
              computeBatteryPowerSignedMw(gInaSensors.battery(), gWifiService.config()),
              gInaSensors.load().powerMw,
              gInaSensors.solar().loadVoltageV,
@@ -89,6 +105,7 @@ void setup() {
   gInaSensors.applyConfig(gWifiService.config());
   gInaSensors.setSampleIntervalMs(gWifiService.config().sensorPollIntervalMs);
   gInaSensors.begin();
+  captureRawHistoryPoint(gRawHistoryBuffer, gInaSensors.lastReadMs());
   analysisInit(gAnalysis, millis());
   updateSystemState();
   gOtaService.begin();
@@ -101,7 +118,12 @@ void loop() {
 
   gWifiService.update(nowMs);
   gLedPwmController.update(nowMs);
+  const uint32_t previousReadMs = gInaSensors.lastReadMs();
   gInaSensors.update(nowMs);
+  const uint32_t latestReadMs = gInaSensors.lastReadMs();
+  if (latestReadMs != previousReadMs) {
+    captureRawHistoryPoint(gRawHistoryBuffer, latestReadMs);
+  }
   analysisUpdate(gInaSensors.solar(),
                  gInaSensors.battery(),
                  gInaSensors.load(),

@@ -8,6 +8,7 @@
 #include "i2c_scanner.h"
 #include "ina_sensors.h"
 #include "led_pwm_controller.h"
+#include "raw_history_buffer.h"
 #include "analysis_engine.h"
 #include "ota_service.h"
 #include "system_state.h"
@@ -22,6 +23,7 @@ public:
         LedPwmController& ledPwmController,
         AnalysisSnapshot& analysis,
         I2cScanner& i2cScanner,
+        RawHistoryBuffer& rawHistoryBuffer,
         HistoryBuffer& historyBuffer,
         HistoryBuffer& minuteHistoryBuffer,
         PowerSystemState& currentState);
@@ -38,6 +40,7 @@ private:
   LedPwmController& ledPwmController_;
   AnalysisSnapshot& analysis_;
   I2cScanner& i2cScanner_;
+  RawHistoryBuffer& rawHistoryBuffer_;
   HistoryBuffer& historyBuffer_;
   HistoryBuffer& minuteHistoryBuffer_;
   PowerSystemState& currentState_;
@@ -48,6 +51,7 @@ private:
   void handleHealth_();
   void handleStatus_();
   void handleHistory_();
+  void handleLiveHistory_();
   void handleI2cScan_();
   void handleConfig_();
   void handleSaveWifi_();

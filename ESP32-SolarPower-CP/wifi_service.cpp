@@ -492,8 +492,8 @@ uint32_t WifiService::normalizeChartPointLimit_(uint32_t value) const {
     return Config::kMinChartPointLimit;
   }
 
-  if (value > Config::kHistoryCapacity) {
-    return Config::kHistoryCapacity;
+  if (value > Config::kMaxChartPointLimit) {
+    return Config::kMaxChartPointLimit;
   }
 
   return value;
