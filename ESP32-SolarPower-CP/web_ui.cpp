@@ -70,7 +70,8 @@ void appendInaConfig(JsonObject object, const DeviceConfig& config) {
 void appendRuntimeConfig(JsonObject object,
                          const DeviceConfig& config,
                          const InaSensors& sensors,
-                         const HistoryBuffer& historyBuffer) {
+                         const HistoryBuffer& historyBuffer,
+                         const HistoryBuffer& minuteHistoryBuffer) {
   const InaTimingProfile timing = describeIna3221Timing(config.inaAveragingSamples,
                                                         config.inaBusConvTimeUs,
                                                         config.inaShuntConvTimeUs);
@@ -84,6 +85,13 @@ void appendRuntimeConfig(JsonObject object,
   object["history_capacity"] = historyBuffer.capacity();
   object["history_span_ms"] =
       static_cast<uint32_t>(historyBuffer.capacity()) * config.historyIntervalMs;
+  object["history_seconds_capacity"] = historyBuffer.capacity();
+  object["history_seconds_span_ms"] =
+      static_cast<uint32_t>(historyBuffer.capacity()) * config.historyIntervalMs;
+  object["history_minutes_interval_ms"] = Config::kMinuteHistoryIntervalMs;
+  object["history_minutes_capacity"] = minuteHistoryBuffer.capacity();
+  object["history_minutes_span_ms"] =
+      static_cast<uint32_t>(minuteHistoryBuffer.capacity()) * Config::kMinuteHistoryIntervalMs;
   object["i2c_clock_hz"] = Config::kI2cClockHz;
   object["ina_averaging_samples"] = timing.averagingSamples;
   object["ina_bus_conv_us"] = timing.busConvTimeUs;
@@ -121,6 +129,40 @@ void appendLedPwmConfig(JsonObject object,
 
 bool argIsTruthy(const String& value) {
   return value == "1" || value == "true" || value == "on" || value == "yes";
+}
+
+enum class HistoryViewMode : uint8_t {
+  Seconds,
+  Minutes
+};
+
+HistoryViewMode parseHistoryViewMode(const String& value) {
+  if (value == "minutes" || value == "minute" || value == "min") {
+    return HistoryViewMode::Minutes;
+  }
+
+  return HistoryViewMode::Seconds;
+}
+
+const char* historyViewModeText(HistoryViewMode viewMode) {
+  return viewMode == HistoryViewMode::Minutes ? "minutes" : "seconds";
+}
+
+uint32_t historyIntervalMsForView(const DeviceConfig& config, HistoryViewMode viewMode) {
+  return viewMode == HistoryViewMode::Minutes ? Config::kMinuteHistoryIntervalMs
+                                              : config.historyIntervalMs;
+}
+
+const HistoryBuffer& historyBufferForView(HistoryViewMode viewMode,
+                                          const HistoryBuffer& secondsBuffer,
+                                          const HistoryBuffer& minuteBuffer) {
+  return viewMode == HistoryViewMode::Minutes ? minuteBuffer : secondsBuffer;
+}
+
+const char* historySampleNote(HistoryViewMode viewMode) {
+  return viewMode == HistoryViewMode::Minutes
+             ? "No chart averaging. Minute view stores 1 s sensor snapshots for a longer trend."
+             : "No chart averaging. Second view stores direct history snapshots at the configured interval.";
 }
 
 const char kDashboardHtml[] PROGMEM = R"dash(
@@ -162,6 +204,11 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     @media (max-width:500px){.cards-row,.cfg-grid{grid-template-columns:1fr}.topbar{flex-direction:column;align-items:flex-start;gap:10px}}
     .arc-svg{width:100%;max-width:120px;display:block;margin:8px auto 10px}
     .flow-card,.chart-card{margin-bottom:14px}
+    .chart-toolbar{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+    .chart-view-switch{display:flex;gap:8px;flex-wrap:wrap}
+    .chart-mode-btn{background:var(--bg-card2);border:1px solid var(--border);color:var(--muted);border-radius:999px;padding:7px 12px;font-family:'Courier New',monospace;font-size:.7rem;cursor:pointer;transition:border-color .2s,color .2s,background .2s}
+    .chart-mode-btn.active{border-color:var(--blue);color:var(--blue);background:rgba(56,189,248,.12)}
+    .chart-meta{display:flex;flex-direction:column;gap:4px}
     .inp{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-family:'Courier New',monospace;font-size:.8rem;outline:none}
     .inp:focus{border-color:var(--blue)}
     .btn-primary,.btn-secondary,.btn-danger{border-radius:6px;padding:8px 14px;font-family:'Courier New',monospace;font-size:.75rem;cursor:pointer}
@@ -391,6 +438,20 @@ const char kDashboardHtml[] PROGMEM = R"dash(
           <input class="inp" id="flow-load-threshold" type="number" min="0" max="100000" step="1" placeholder="Load mW">
         </div>
         <button class="btn-primary" id="save-flow" type="button" style="width:100%">Save Flow Thresholds</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card chart-card">
+    <div class="chart-toolbar">
+      <div class="chart-meta">
+        <div class="lbl" style="margin-bottom:0">History Scope</div>
+        <div class="sub" id="history-mode-note">Second view: waiting for runtime config...</div>
+        <div class="sub" id="history-source-note">No chart averaging. Waiting for live history metadata...</div>
+      </div>
+      <div class="chart-view-switch">
+        <button class="chart-mode-btn active" id="history-view-seconds" type="button" data-history-view="seconds">Seconds</button>
+        <button class="chart-mode-btn" id="history-view-minutes" type="button" data-history-view="minutes">Minutes</button>
       </div>
     </div>
   </div>
@@ -655,12 +716,18 @@ const char kDashboardHtml[] PROGMEM = R"dash(
   </div>
 
   <script>
-    let maxPts=180,historyRefreshMs=4000,historyTimer=null,chartReady=false,lastUpdate=Date.now(),pollMs=1000,pollTimer=null,batteryPresets=[],serverFormDirty=false,serverFormSaving=false,flowFormDirty=false,flowFormSaving=false,ledFormDirty=false,ledFormSaving=false,ledLiveTimer=null,ledSaveTimer=null;const charts={},hist={l:[],ps:[],pb:[],pl:[],vs:[],vb:[],vl:[],is:[],ib:[],il:[]},SOLAR='#f59e0b',BAT='#10b981',BAT_DIS='#ef4444',COMBO='#a855f7',MUTED='#4a6080',WARN='#ef4444',LOAD='#38bdf8';
-    const chartOpts={animation:false,responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#4a6080',font:{family:'Courier New',size:10}}}},scales:{x:{display:false},y:{grid:{color:'#1e2d42'},ticks:{color:'#4a6080',font:{family:'Courier New',size:10}}}}};
-    function mkDs(label,color,bg){return{label:label,data:[],borderColor:color,backgroundColor:bg,borderWidth:1.5,fill:true,tension:.3,pointRadius:0}}
+    let maxPts=300,historyRefreshMs=1500,historyTimer=null,chartReady=false,lastUpdate=Date.now(),pollMs=1000,pollTimer=null,batteryPresets=[],serverFormDirty=false,serverFormSaving=false,flowFormDirty=false,flowFormSaving=false,ledFormDirty=false,ledFormSaving=false,ledLiveTimer=null,ledSaveTimer=null,historyView='seconds',historyCapacityMax=600,runtimeHistoryMs=100,runtimeSecondCapacity=600,runtimeMinuteIntervalMs=1000,runtimeMinuteCapacity=600,runtimeInaAvg=1;const charts={},hist={l:[],ps:[],pb:[],pl:[],vs:[],vb:[],vl:[],is:[],ib:[],il:[]},SOLAR='#f59e0b',BAT='#10b981',BAT_DIS='#ef4444',COMBO='#a855f7',MUTED='#4a6080',WARN='#ef4444',LOAD='#38bdf8';
+    const chartOpts={animation:false,responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:'#4a6080',font:{family:'Courier New',size:10}}}},scales:{x:{display:true,grid:{display:false},ticks:{color:'#4a6080',font:{family:'Courier New',size:10},autoSkip:true,maxTicksLimit:8,maxRotation:0,minRotation:0}},y:{grid:{color:'#1e2d42'},ticks:{color:'#4a6080',font:{family:'Courier New',size:10}}}}};
+    function mkDs(label,color,bg){return{label:label,data:[],borderColor:color,backgroundColor:bg,borderWidth:1.5,fill:true,tension:0,pointRadius:0}}
     function mkCfg(a,b,c,ca,cb,cc,bga,bgb,bgc){return{type:'line',data:{labels:[],datasets:[mkDs(a,ca,bga),mkDs(b,cb,bgb),mkDs(c,cc,bgc)]},options:chartOpts}}
     function fmt(v,d){return Number.isFinite(v)?Number(v).toFixed(d==null?2:d):'--'}
     function fmtSigned(v,d){if(!Number.isFinite(Number(v)))return'--';v=Number(v);if(Math.abs(v)<.05)v=0;return(v>0?'+':'')+v.toFixed(d==null?1:d)}
+    function formatHistorySpan(ms){ms=Math.max(0,Number(ms)||0);if(ms>=60000)return(ms/60000).toFixed(ms>=600000?1:2)+' min';if(ms>=1000)return(ms/1000).toFixed(ms>=10000?0:1)+' s';return Math.round(ms)+' ms'}
+    function historyIntervalForView(view){return view==='minutes'?runtimeMinuteIntervalMs:runtimeHistoryMs}
+    function historyCapacityForView(view){return view==='minutes'?runtimeMinuteCapacity:runtimeSecondCapacity}
+    function formatHistoryLabel(timestampMs,latestTimestampMs,view){const ageMs=Math.max(0,(Number(latestTimestampMs)||0)-(Number(timestampMs)||0));if(ageMs===0)return'now';if(view==='minutes')return'-'+(ageMs/60000).toFixed(ageMs>=600000?0:1)+'m';if(ageMs>=1000)return'-'+(ageMs/1000).toFixed(ageMs>=10000?0:1)+'s';return'-'+Math.round(ageMs)+'ms'}
+    function renderHistoryModeSummary(noteOverride){const intervalMs=historyIntervalForView(historyView),visiblePoints=Math.min(maxPts,historyCapacityForView(historyView)),visibleSpanMs=visiblePoints*intervalMs;document.querySelectorAll('[data-history-view]').forEach(btn=>btn.classList.toggle('active',btn.dataset.historyView===historyView));document.getElementById('history-mode-note').textContent=historyView==='minutes'?'Minute view: 1 s sensor snapshots for a longer trend.':'Second view: direct history snapshots every '+intervalMs+' ms.';document.getElementById('history-source-note').textContent=noteOverride||('No chart averaging. Visible span ~'+formatHistorySpan(visibleSpanMs)+' | INA avg x'+runtimeInaAvg);historyRefreshMs=historyView==='minutes'?1500:Math.max(500,Math.min(2500,intervalMs*4))}
+    function setHistoryView(view){historyView=view==='minutes'?'minutes':'seconds';renderHistoryModeSummary();fetchHistory()}
     function flash(id,txt){const el=document.getElementById(id);if(!el)return;el.textContent=txt;el.classList.remove('flashed');void el.offsetWidth;el.classList.add('flashed');setTimeout(()=>el.classList.remove('flashed'),400)}
     function updateArc(arcId,arcTxtId,value,min,max,stroke,labelText){const total=172.8,pct=Math.min(1,Math.max(0,(value-min)/(max-min))),offset=total*(1-pct),arc=document.getElementById(arcId);arc.style.strokeDashoffset=offset;if(stroke)arc.setAttribute('stroke',stroke);document.getElementById(arcTxtId).textContent=labelText!=null?labelText:(Number(value)||0).toFixed(1)+'V'}
     function setPoll(ms){pollMs=Math.max(1000,Number(ms)||1000)}
@@ -684,8 +751,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function formatShunt(v){const value=Number(v);return Number.isFinite(value)?value.toFixed(2)+' mOhm':'-- mOhm'}
     function renderWifiConfig(data,syncInputs){const ssid=data.wifi_ssid||'';if(syncInputs&&document.activeElement!==document.getElementById('wifi-ssid'))document.getElementById('wifi-ssid').value=ssid;if(syncInputs)document.getElementById('wifi-pass').value='';document.getElementById('wifi-note').textContent='Current SSID: '+(ssid||'--')+' | Mode: '+(data.wifi_mode||'--')}
     function renderInaConfig(data,syncInputs){const solar=Number(data.solar_shunt_milliohms),battery=Number(data.battery_shunt_milliohms),load=Number(data.load_shunt_milliohms);document.getElementById('solar-shunt-line').textContent='Shunt config: '+formatShunt(solar);document.getElementById('bat-shunt-line').textContent='INA shunt: '+formatShunt(battery);document.getElementById('load-shunt-line').textContent='Shunt config: '+formatShunt(load);document.getElementById('i2c-map-note').textContent='Map: '+(data.i2c_map||('0x40=INA3221, CH1=Solar '+formatShunt(solar)+', CH2=Battery '+formatShunt(battery)+', CH3=Load '+formatShunt(load)));if(syncInputs){if(document.activeElement!==document.getElementById('solar-shunt-mo'))document.getElementById('solar-shunt-mo').value=Number.isFinite(solar)?solar.toFixed(2):'';if(document.activeElement!==document.getElementById('bat-shunt-mo'))document.getElementById('bat-shunt-mo').value=Number.isFinite(battery)?battery.toFixed(2):'';if(document.activeElement!==document.getElementById('load-shunt-mo'))document.getElementById('load-shunt-mo').value=Number.isFinite(load)?load.toFixed(2):'';}}
-    function clampChartPoints(v){v=Number(v);if(!Number.isFinite(v))v=180;return Math.max(30,Math.min(300,Math.round(v)))}
-    function renderRuntimeConfig(data){const reportMs=Math.max(200,Number(data.sample_interval_ms)||1000),sensorPollMs=Math.max(1,Number(data.sensor_poll_interval_ms)||1),historyMs=Math.max(10,Number(data.history_interval_ms)||100),chartPts=clampChartPoints(data.chart_point_limit),inaAvg=Math.max(1,Number(data.ina_averaging_samples)||1),inaBusUs=Math.max(140,Number(data.ina_bus_conv_us)||140),inaShuntUs=Math.max(140,Number(data.ina_shunt_conv_us)||140),frameUs=Math.max(0,Math.round(Number(data.ina_frame_time_us)||0)),theoryHz=Number(data.ina_estimated_channel_hz)||0,measuredHz=Number(data.sensor_measured_hz)||0,historyCap=Math.max(chartPts,Number(data.history_capacity)||300),chartSpanSec=(chartPts*historyMs)/1000,maxHistorySpanSec=(historyCap*historyMs)/1000,regHex=data.ina_config_register_hex||'0x7007';if(document.activeElement!==document.getElementById('cfg-sensor-poll'))document.getElementById('cfg-sensor-poll').value=sensorPollMs;if(document.activeElement!==document.getElementById('cfg-interval'))document.getElementById('cfg-interval').value=reportMs;if(document.activeElement!==document.getElementById('cfg-history-interval'))document.getElementById('cfg-history-interval').value=historyMs;if(document.activeElement!==document.getElementById('cfg-chart-points'))document.getElementById('cfg-chart-points').value=chartPts;document.getElementById('cfg-ina-avg').value=String(inaAvg);document.getElementById('cfg-ina-bus-us').value=String(inaBusUs);document.getElementById('cfg-ina-shunt-us').value=String(inaShuntUs);maxPts=chartPts;historyRefreshMs=Math.max(2000,Math.min(6000,historyMs*10));document.getElementById('interval-note').textContent='Poll '+sensorPollMs+' ms | Report '+reportMs+' ms | History '+historyMs+' ms | Chart '+chartPts+' pts (~'+chartSpanSec.toFixed(1)+' s, buffer ~'+maxHistorySpanSec.toFixed(1)+' s)';document.getElementById('runtime-ina-note').textContent='INA cfg '+regHex+' | avg x'+inaAvg+' | bus '+inaBusUs+' us | shunt '+inaShuntUs+' us | theory '+(theoryHz?theoryHz.toFixed(1):'0.0')+' Hz | measured '+(measuredHz?measuredHz.toFixed(1):'0.0')+' Hz'}
+    function clampChartPoints(v){v=Number(v);if(!Number.isFinite(v))v=300;return Math.max(30,Math.min(historyCapacityMax,Math.round(v)))}
+    function renderRuntimeConfig(data){const reportMs=Math.max(200,Number(data.sample_interval_ms)||1000),sensorPollMs=Math.max(1,Number(data.sensor_poll_interval_ms)||1),historyMs=Math.max(10,Number(data.history_interval_ms)||100),secondsCap=Math.max(30,Number(data.history_seconds_capacity||data.history_capacity)||600),minuteIntervalMs=Math.max(1,Number(data.history_minutes_interval_ms)||1000),minuteCap=Math.max(30,Number(data.history_minutes_capacity)||secondsCap),rawChartPts=Number(data.chart_point_limit)||300,inaAvg=Math.max(1,Number(data.ina_averaging_samples)||1),inaBusUs=Math.max(140,Number(data.ina_bus_conv_us)||140),inaShuntUs=Math.max(140,Number(data.ina_shunt_conv_us)||140),theoryHz=Number(data.ina_estimated_channel_hz)||0,measuredHz=Number(data.sensor_measured_hz)||0,regHex=data.ina_config_register_hex||'0x7007';historyCapacityMax=Math.max(secondsCap,minuteCap);const chartPts=clampChartPoints(rawChartPts),secondsSpanMs=secondsCap*historyMs,minuteSpanMs=minuteCap*minuteIntervalMs;if(document.activeElement!==document.getElementById('cfg-sensor-poll'))document.getElementById('cfg-sensor-poll').value=sensorPollMs;if(document.activeElement!==document.getElementById('cfg-interval'))document.getElementById('cfg-interval').value=reportMs;if(document.activeElement!==document.getElementById('cfg-history-interval'))document.getElementById('cfg-history-interval').value=historyMs;if(document.activeElement!==document.getElementById('cfg-chart-points'))document.getElementById('cfg-chart-points').value=chartPts;document.getElementById('cfg-ina-avg').value=String(inaAvg);document.getElementById('cfg-ina-bus-us').value=String(inaBusUs);document.getElementById('cfg-ina-shunt-us').value=String(inaShuntUs);runtimeHistoryMs=historyMs;runtimeSecondCapacity=secondsCap;runtimeMinuteIntervalMs=minuteIntervalMs;runtimeMinuteCapacity=minuteCap;runtimeInaAvg=inaAvg;maxPts=chartPts;document.getElementById('interval-note').textContent='Poll '+sensorPollMs+' ms | Report '+reportMs+' ms | Seconds buffer ~'+formatHistorySpan(secondsSpanMs)+' | Minutes buffer ~'+formatHistorySpan(minuteSpanMs)+' | Chart '+chartPts+' pts';document.getElementById('runtime-ina-note').textContent='INA cfg '+regHex+' | avg x'+inaAvg+' | bus '+inaBusUs+' us | shunt '+inaShuntUs+' us | theory '+(theoryHz?theoryHz.toFixed(1):'0.0')+' Hz | measured '+(measuredHz?measuredHz.toFixed(1):'0.0')+' Hz';renderHistoryModeSummary()}
     function markFlowFormDirty(){flowFormDirty=true;document.getElementById('save-flow').textContent='Save Flow Thresholds *';document.getElementById('flow-edit-note').textContent='Unsaved flow threshold changes pending.'}
     function clearFlowFormDirty(msg){flowFormDirty=false;flowFormSaving=false;document.getElementById('save-flow').textContent='Save Flow Thresholds';document.getElementById('flow-edit-note').textContent=msg||'Changes save only after pressing the button.'}
     function renderFlowThresholdConfig(data){const solar=Math.max(0,Number(data.solar_active_threshold_mw)||0),load=Math.max(0,Number(data.load_active_threshold_mw)||0),battery=Math.max(0,Number(data.battery_flow_threshold_mw)||0);if(!flowFormDirty&&!flowFormSaving){document.getElementById('flow-solar-threshold').value=solar;document.getElementById('flow-load-threshold').value=load;document.getElementById('flow-battery-threshold').value=battery}document.getElementById('flow-threshold-note').textContent='Active thresholds: solar >= '+solar+' mW | battery >= '+battery+' mW | load >= '+load+' mW'}
@@ -702,12 +769,12 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function renderSenderStatus(data){const enabled=('backend_sender_enabled' in data)?!!data.backend_sender_enabled:!!data.server_enabled,state=data.backend_sender_state|| (enabled?'idle':'disabled'),depth=Number(data.backend_queue_depth)||0,cap=Number(data.backend_queue_capacity)||32,dropped=Number(data.backend_dropped_samples)||0,retry=Number(data.backend_next_retry_in_ms)||0,http=data.backend_last_http_status?(' | HTTP '+data.backend_last_http_status):'',parts=[state.replace(/_/g,' ')];if(data.backend_last_error)parts.push(data.backend_last_error);if(retry>0)parts.push('retry in '+retry+' ms');if(!serverFormDirty&&!serverFormSaving){document.getElementById('srv-enable').checked=enabled;document.getElementById('srv-base').value=data.api_base||document.getElementById('srv-base').value||'';}document.getElementById('srv-key-note').textContent=data.api_key_configured?'API key stored on device':'API key empty';document.getElementById('srv-status').textContent=parts.join(' | ');document.getElementById('srv-queue').textContent='Queue: '+depth+' / '+cap+' | Dropped: '+dropped+http}
     function syncOne(ch,keyA,keyB,keyC){if(!ch)return;ch.data.labels=hist.l.slice();ch.data.datasets[0].data=hist[keyA].slice();ch.data.datasets[1].data=hist[keyB].slice();ch.data.datasets[2].data=hist[keyC].slice();ch.update('none')}
     function syncCharts(){if(!chartReady)return;syncOne(charts.power,'ps','pb','pl');syncOne(charts.voltage,'vs','vb','vl');syncOne(charts.current,'is','ib','il')}
-    function appendPoint(p){if(hist.l.length>=maxPts){Object.keys(hist).forEach(k=>hist[k].shift())}hist.l.push('');hist.ps.push(Number(p.ps)||0);hist.pb.push(Number(p.pb)||0);hist.pl.push(Number(p.pl)||0);hist.vs.push(Number(p.vs)||0);hist.vb.push(Number(p.vb)||0);hist.vl.push(Number(p.vl)||0);hist.is.push(Number(p.is)||0);hist.ib.push(Number(p.ib)||0);hist.il.push(Number(p.il)||0)}
-    function pushLive(d){appendPoint({ps:d.solar.power_mw,pb:d.battery_power_signed_mw,pl:d.load.power_mw,vs:d.solar.voltage,vb:d.battery.voltage,vl:d.load.voltage,is:d.solar.current_ma,ib:d.battery.current_ma,il:d.load.current_ma});syncCharts()}
+    function appendPoint(label,p){if(hist.l.length>=maxPts){Object.keys(hist).forEach(k=>hist[k].shift())}hist.l.push(label||'');hist.ps.push(Number(p.ps)||0);hist.pb.push(Number(p.pb)||0);hist.pl.push(Number(p.pl)||0);hist.vs.push(Number(p.vs)||0);hist.vb.push(Number(p.vb)||0);hist.vl.push(Number(p.vl)||0);hist.is.push(Number(p.is)||0);hist.ib.push(Number(p.ib)||0);hist.il.push(Number(p.il)||0)}
+    function appendHistoryPoint(p,view,latestTimestampMs){appendPoint(formatHistoryLabel(p.timestamp_ms,latestTimestampMs,view),{ps:p.p_solar_mw,pb:p.p_bat_signed_mw,pl:p.p_load_mw,vs:p.v_solar_v,vb:p.v_bat_v,vl:p.v_load_v,is:p.i_solar_ma,ib:p.i_bat_ma,il:p.i_load_ma})}
     function resetHist(){hist.l=[];hist.ps=[];hist.pb=[];hist.pl=[];hist.vs=[];hist.vb=[];hist.vl=[];hist.is=[];hist.ib=[];hist.il=[]}
-    function waitForCharts(){const t=setInterval(()=>{if(typeof Chart!=='undefined'){clearInterval(t);charts.power=new Chart(document.getElementById('powerChart').getContext('2d'),mkCfg('Solar Power (mW)','Battery Power (mW)','Load Power (mW)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));charts.voltage=new Chart(document.getElementById('voltageChart').getContext('2d'),mkCfg('Solar Voltage (V)','Battery Voltage (V)','Load Voltage (V)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));charts.current=new Chart(document.getElementById('currentChart').getContext('2d'),mkCfg('Solar Current (mA)','Battery Current (mA)','Load Current (mA)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));chartReady=true;syncCharts()}},150)}
+    function waitForCharts(){const t=setInterval(()=>{if(typeof Chart!=='undefined'){clearInterval(t);charts.power=new Chart(document.getElementById('powerChart').getContext('2d'),mkCfg('Solar Power (mW)','Battery Power (mW)','Load Power (mW)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));charts.voltage=new Chart(document.getElementById('voltageChart').getContext('2d'),mkCfg('Solar Voltage (V)','Battery Voltage (V)','Load Voltage (V)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));charts.current=new Chart(document.getElementById('currentChart').getContext('2d'),mkCfg('Solar Current (mA)','Battery Current (mA)','Load Current (mA)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));chartReady=true;renderHistoryModeSummary();syncCharts()}},150)}
     function scheduleHistoryRefresh(){if(historyTimer)clearTimeout(historyTimer);historyTimer=setTimeout(fetchHistory,historyRefreshMs)}
-    async function fetchHistory(){try{const r=await fetch('/api/history');const d=await r.json();resetHist();(d.points||[]).slice(-maxPts).forEach(p=>appendPoint({ps:p.p_solar_mw,pb:p.p_bat_signed_mw,pl:p.p_load_mw,vs:p.v_solar_v,vb:p.v_bat_v,vl:p.v_load_v,is:p.i_solar_ma,ib:p.i_bat_ma,il:p.i_load_ma}));syncCharts()}catch(e){}finally{scheduleHistoryRefresh()}}
+    async function fetchHistory(){try{const activeView=historyView,r=await fetch('/api/history?view='+encodeURIComponent(activeView)+'&limit='+encodeURIComponent(maxPts)),d=await r.json(),points=Array.isArray(d.points)?d.points:[],latestTimestampMs=points.length?(Number(points[points.length-1].timestamp_ms)||0):0,intervalMs=Math.max(1,Number(d.interval_ms)||historyIntervalForView(activeView)),sensorAvg=Math.max(1,Number(d.ina_averaging_samples)||runtimeInaAvg);if(activeView==='minutes')runtimeMinuteIntervalMs=intervalMs;resetHist();points.forEach(p=>appendHistoryPoint(p,d.view||activeView,latestTimestampMs));syncCharts();renderHistoryModeSummary((d.sample_note||'No chart averaging.')+' | Visible span ~'+formatHistorySpan(points.length*intervalMs)+' | INA avg x'+sensorAvg)}catch(e){}finally{scheduleHistoryRefresh()}}
     function updateFlowEfficiency(d){const a=d.analysis||{},mode=a.analysis_mode||'unavailable',balanceValid=!!a.balance_valid,pctLoad=Math.max(0,Number(a.pct_load)||0),pctBat=Math.max(0,Number(a.pct_bat)||0),pctLoss=Math.max(0,Number(a.pct_loss)||0),showBatterySink=mode==='solar_input'&&pctBat>.05,panel=document.querySelector('.flow-eff');const modeColor=mode==='solar_input'?SOLAR:mode==='battery_input'?BAT_DIS:mode==='mixed_input'?COMBO:MUTED;let effColor=MUTED;setText('flow-eff-mode',analysisModeText(mode),modeColor);if(balanceValid){const eff=Math.max(0,Math.min(100,Number(a.efficiency_pct)||0));effColor=eff>80?BAT:eff>60?SOLAR:WARN;setText('flow-eff-val',eff.toFixed(1)+'%',effColor);setText('flow-eff-loss','Loss '+fmt(a.p_loss_mw,0)+' mW',WARN);document.getElementById('flow-mini-load').style.width=pctLoad.toFixed(1)+'%';document.getElementById('flow-mini-load').style.opacity='1';document.getElementById('flow-mini-loss').style.width=pctLoss.toFixed(1)+'%';document.getElementById('flow-mini-loss').style.opacity='1';if(showBatterySink){document.getElementById('flow-mini-bat').style.width=pctBat.toFixed(1)+'%';document.getElementById('flow-mini-bat').style.opacity='1';setText('flow-mini-bat-txt',pctBat.toFixed(1)+'%',BAT)}else{document.getElementById('flow-mini-bat').style.width='0%';document.getElementById('flow-mini-bat').style.opacity='.14';setText('flow-mini-bat-txt','--',MUTED)}setText('flow-mini-load-txt',pctLoad.toFixed(1)+'%',LOAD);setText('flow-mini-loss-txt',pctLoss.toFixed(1)+'%',WARN);if(panel){panel.style.borderColor=effColor+'55';panel.style.boxShadow='inset 0 0 0 1px rgba(0,0,0,0), 0 0 0 rgba(0,0,0,0)'}}else{setText('flow-eff-val','N/A',MUTED);setText('flow-eff-loss','Loss N/A',MUTED);['flow-mini-load','flow-mini-bat','flow-mini-loss'].forEach(id=>{document.getElementById(id).style.width='0%';document.getElementById(id).style.opacity='.28'});setText('flow-mini-load-txt','--',MUTED);setText('flow-mini-bat-txt','--',MUTED);setText('flow-mini-loss-txt','--',MUTED);if(panel)panel.style.borderColor='var(--border)'}}
     function updateAnalysis(d){const a=d.analysis||{},s=d.solar||{},b=d.battery||{},l=d.load||{},mode=a.analysis_mode||'unavailable',batSigned=Number(d.battery_power_signed_mw)||0,balanceValid=!!a.balance_valid,batteryValid=!!(a.battery_estimate_valid&&b.ok),effArc=document.getElementById('eff-arc');const pctLoad=Math.max(0,Number(a.pct_load)||0),pctBat=Math.max(0,Number(a.pct_bat)||0),pctLoss=Math.max(0,Number(a.pct_loss)||0),showBatterySink=mode==='solar_input'&&pctBat>.05;const modeColor=mode==='solar_input'?SOLAR:mode==='battery_input'?BAT_DIS:mode==='mixed_input'?COMBO:MUTED;let effColor=MUTED;setText('analysis-mode',analysisModeText(mode),modeColor);if(balanceValid){const eff=Math.max(0,Math.min(100,Number(a.efficiency_pct)||0));effColor=eff>80?BAT:eff>60?SOLAR:WARN;effArc.style.strokeDashoffset=(201.1*(1-eff/100)).toFixed(1);effArc.setAttribute('stroke',effColor);setText('eff-pct',eff.toFixed(1)+'%',effColor);document.getElementById('bar-load').style.width=pctLoad.toFixed(1)+'%';document.getElementById('bar-loss').style.width=pctLoss.toFixed(1)+'%';document.getElementById('bar-load').style.opacity='1';document.getElementById('bar-loss').style.opacity='1';if(showBatterySink){document.getElementById('bar-bat').style.width=pctBat.toFixed(1)+'%';document.getElementById('bar-bat').style.opacity='1';setText('leg-bat-pct',pctBat.toFixed(1)+'%')}else{document.getElementById('bar-bat').style.width='0%';document.getElementById('bar-bat').style.opacity='.14';setText('leg-bat-pct','--')}setText('leg-load-pct',pctLoad.toFixed(1)+'%');setText('leg-loss-pct',pctLoss.toFixed(1)+'%');setText('leg-loss-mw',fmt(a.p_loss_mw,0)+' mW',WARN)}else{effArc.style.strokeDashoffset='201.1';effArc.setAttribute('stroke',MUTED);setText('eff-pct','N/A',MUTED);['bar-load','bar-bat','bar-loss'].forEach(id=>{document.getElementById(id).style.width='0%';document.getElementById(id).style.opacity='.28'});setText('leg-load-pct','--');setText('leg-bat-pct','--');setText('leg-loss-pct','--');setText('leg-loss-mw','N/A',MUTED)}setText('leg-load-mw',l.ok?fmt(l.power_mw,0)+' mW':'N/A',l.ok?LOAD:MUTED);setText('leg-bat-mw',b.ok?Math.abs(batSigned).toFixed(0)+' mW':'N/A',b.ok?(batSigned<0?BAT:batSigned>0?BAT_DIS:MUTED):MUTED);document.getElementById('ldot-bat').style.background=b.ok?(batSigned>0?BAT_DIS:BAT):MUTED;setText('an-p-solar',s.ok?fmt(s.power_mw,0)+' mW':'N/A',s.ok?SOLAR:MUTED);setText('an-iv-solar',s.ok?(fmt(s.current_ma,1)+' mA @ '+fmt(s.voltage,2)+' V'):'N/A');setText('an-p-load',l.ok?fmt(l.power_mw,0)+' mW':'N/A',l.ok?LOAD:MUTED);setText('an-iv-load',l.ok?(fmt(l.current_ma,1)+' mA @ '+fmt(l.voltage,2)+' V'):'N/A');let batLabel='Battery N/A',batColor=MUTED,batValue='N/A',batInfo='N/A';if(b.ok){if((d.battery_direction||'unknown')==='charging'){batLabel='Battery Charging';batColor=BAT}else if((d.battery_direction||'unknown')==='discharging'){batLabel='Battery Discharging';batColor=BAT_DIS}else{batLabel='Battery Idle';batColor=MUTED}batValue=fmtSigned(batSigned,0)+' mW';batInfo=fmtSigned(b.current_ma,1)+' mA @ '+fmt(b.voltage,2)+' V'}setText('an-bat-lbl',batLabel);setText('an-p-bat',batValue,batColor);setText('an-iv-bat',batInfo);setText('an-p-loss',balanceValid?fmt(a.p_loss_mw,0)+' mW':'N/A',balanceValid?WARN:MUTED);const dur=Number(a.session_duration_ms)||0,hh=Math.floor(dur/3600000),mm=Math.floor((dur%3600000)/60000),ss=Math.floor((dur%60000)/1000);setText('session-dur',String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0'),'#10b981');setText('s-solar',(Number(a.session_solar_wh)||0).toFixed(3)+' Wh','#f59e0b');setText('s-load',(Number(a.session_load_wh)||0).toFixed(3)+' Wh','#38bdf8');setText('s-bat',(Number(a.session_bat_in_wh!=null?a.session_bat_in_wh:a.session_bat_wh)||0).toFixed(3)+' Wh','#10b981');setText('s-bat-out',(Number(a.session_bat_out_wh)||0).toFixed(3)+' Wh',BAT_DIS);setText('s-loss',(Number(a.session_loss_wh)||0).toFixed(3)+' Wh','#ef4444');if(batteryValid){setText('b-crate',(Number(a.c_rate)||0).toFixed(2)+'C',BAT);document.getElementById('crate-fill').style.width=Math.min(100,(Number(a.c_rate)||0)*100).toFixed(0)+'%';document.getElementById('crate-fill').style.background=BAT;setText('b-full',Number(a.est_full_h)>0?formatHours(a.est_full_h):'N/A',BAT);setText('b-run',Number(a.est_runtime_h)>0?formatHours(a.est_runtime_h):'N/A',SOLAR)}else{setText('b-crate','N/A',MUTED);document.getElementById('crate-fill').style.width='0%';setText('b-full','N/A',MUTED);setText('b-run','N/A',MUTED)}setText('b-cap',(d.battery_capacity_mah||2000)+' mAh','var(--muted)');setText('b-avg-eff',balanceValid?(Number(a.efficiency_pct)||0).toFixed(1)+'%':'N/A',balanceValid?effColor:MUTED)}
     async function fetchConfig(){
@@ -779,7 +846,6 @@ const char kDashboardHtml[] PROGMEM = R"dash(
         document.getElementById('flow-detail').textContent=d.sensor_health||'OK';
         document.getElementById('flow-warn').textContent=d.visual_warning||'';
         setBadge(d.state,d.state_label||d.state);
-        pushLive(d);
         document.getElementById('ip').textContent=d.ip||'--';
         document.getElementById('hdr-mode').textContent=d.wifi_mode||'--';
         document.getElementById('hdr-device').textContent=d.device_id||'--';
@@ -805,7 +871,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     }
     async function saveWifiConfig(){const button=document.getElementById('save-wifi');button.textContent='Saving Wi-Fi...';const body=new URLSearchParams();body.set('wifi_ssid',document.getElementById('wifi-ssid').value);const pass=document.getElementById('wifi-pass').value;if(pass)body.set('wifi_pass',pass);try{const r=await fetch('/api/config/wifi',{method:'POST',body});const d=await r.json();if(!r.ok){alert(d.error||'Wi-Fi update failed');return}document.getElementById('wifi-pass').value='';document.getElementById('wifi-note').textContent=(d.message||'Wi-Fi saved, reboot scheduled')+' | Tunggu device reconnect';alert(d.message||'Wi-Fi saved, reboot scheduled');setTimeout(()=>{fetchConfig();fetchData()},4500)}catch(e){alert('Wi-Fi update failed')}finally{button.textContent='Save Wi-Fi & Reboot'}}
     async function saveDeviceConfig(){const body=new URLSearchParams();body.set('device_id',document.getElementById('cfg-device').value);body.set('line_id',document.getElementById('cfg-line').value);const r=await fetch('/api/config/device',{method:'POST',body});const d=await r.json();alert(d.message||'Saved');fetchConfig();fetchData()}
-    async function saveRuntimeConfig(){const body=new URLSearchParams();body.set('sample_interval_ms',document.getElementById('cfg-interval').value);body.set('sensor_poll_interval_ms',document.getElementById('cfg-sensor-poll').value);body.set('history_interval_ms',document.getElementById('cfg-history-interval').value);body.set('chart_point_limit',document.getElementById('cfg-chart-points').value);body.set('ina_averaging_samples',document.getElementById('cfg-ina-avg').value);body.set('ina_bus_conv_us',document.getElementById('cfg-ina-bus-us').value);body.set('ina_shunt_conv_us',document.getElementById('cfg-ina-shunt-us').value);const r=await fetch('/api/config/runtime',{method:'POST',body});const d=await r.json();if(!r.ok){alert(d.error||'Runtime update failed');return}renderRuntimeConfig(d);alert(d.message||'Runtime updated');fetchConfig();fetchData()}
+    async function saveRuntimeConfig(){const body=new URLSearchParams();body.set('sample_interval_ms',document.getElementById('cfg-interval').value);body.set('sensor_poll_interval_ms',document.getElementById('cfg-sensor-poll').value);body.set('history_interval_ms',document.getElementById('cfg-history-interval').value);body.set('chart_point_limit',document.getElementById('cfg-chart-points').value);body.set('ina_averaging_samples',document.getElementById('cfg-ina-avg').value);body.set('ina_bus_conv_us',document.getElementById('cfg-ina-bus-us').value);body.set('ina_shunt_conv_us',document.getElementById('cfg-ina-shunt-us').value);const r=await fetch('/api/config/runtime',{method:'POST',body});const d=await r.json();if(!r.ok){alert(d.error||'Runtime update failed');return}renderRuntimeConfig(d);fetchHistory();alert(d.message||'Runtime updated');fetchConfig();fetchData()}
     async function saveInaConfig(channel){const body=new URLSearchParams();if(channel==='solar')body.set('solar_shunt_milliohms',document.getElementById('solar-shunt-mo').value);if(channel==='battery')body.set('battery_shunt_milliohms',document.getElementById('bat-shunt-mo').value);if(channel==='load')body.set('load_shunt_milliohms',document.getElementById('load-shunt-mo').value);const r=await fetch('/api/config/ina',{method:'POST',body});const d=await r.json();if(!r.ok){alert(d.error||'INA config update failed');return}renderInaConfig(d,true);alert(d.message||'INA config updated');fetchData()}
     async function saveFlowConfig(){flowFormSaving=true;document.getElementById('save-flow').textContent='Saving Flow Thresholds...';const body=new URLSearchParams();body.set('solar_active_threshold_mw',document.getElementById('flow-solar-threshold').value);body.set('load_active_threshold_mw',document.getElementById('flow-load-threshold').value);body.set('battery_flow_threshold_mw',document.getElementById('flow-battery-threshold').value);const r=await fetch('/api/config/flow',{method:'POST',body});const d=await r.json();if(!r.ok){flowFormSaving=false;document.getElementById('save-flow').textContent='Save Flow Thresholds *';alert(d.error||'Flow threshold update failed');return}clearFlowFormDirty(d.message||'Flow thresholds updated');alert(d.message||'Flow thresholds updated');fetchConfig();fetchData()}
     function buildLedPwmBody(){const body=new URLSearchParams(),flash=syncLedFlashInputs();if(document.getElementById('led-pwm-enable').checked)body.set('led_pwm_enabled','1');if(document.getElementById('led-pwm-flash-enable').checked)body.set('led_pwm_flash_enabled','1');if(document.getElementById('led-pwm-invert').checked)body.set('led_pwm_inverted','1');body.set('led_pwm_frequency_hz',document.getElementById('led-pwm-freq').value);body.set('led_pwm_duty_percent',document.getElementById('led-pwm-duty-num').value);body.set('led_pwm_flash_on_ms',flash.onMs);body.set('led_pwm_flash_period_ms',flash.periodMs);return body}
@@ -820,8 +886,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     async function scanI2C(){const r=await fetch('/api/i2c-scan');const d=await r.json();document.getElementById('i2c-result').textContent=(d.devices||[]).length?(d.devices.map(x=>x.address_hex+' '+x.label).join(' | ')):'No I2C devices detected'}
     window.addEventListener('load',()=>{
       waitForCharts();
-      fetchHistory();
       fetchConfig();
+      fetchHistory();
       fetchData();
       document.addEventListener('visibilitychange',schedulePoll);
       setInterval(()=>{document.getElementById('last-upd').textContent=((Date.now()-lastUpdate)/1000).toFixed(1)+'s ago'},500);
@@ -842,6 +908,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
       document.getElementById('apply-ota').onclick=applyOTA;
       document.getElementById('scan-i2c').onclick=scanI2C;
       document.getElementById('reset-session').onclick=resetSession;
+      document.querySelectorAll('[data-history-view]').forEach(btn=>btn.onclick=()=>setHistoryView(btn.dataset.historyView));
       document.getElementById('flow-solar-threshold').oninput=markFlowFormDirty;
       document.getElementById('flow-load-threshold').oninput=markFlowFormDirty;
       document.getElementById('flow-battery-threshold').oninput=markFlowFormDirty;
@@ -879,6 +946,7 @@ WebUi::WebUi(WifiService& wifiService,
              AnalysisSnapshot& analysis,
              I2cScanner& i2cScanner,
              HistoryBuffer& historyBuffer,
+             HistoryBuffer& minuteHistoryBuffer,
              PowerSystemState& currentState)
     : wifiService_(wifiService),
       otaService_(otaService),
@@ -888,6 +956,7 @@ WebUi::WebUi(WifiService& wifiService,
       analysis_(analysis),
       i2cScanner_(i2cScanner),
       historyBuffer_(historyBuffer),
+      minuteHistoryBuffer_(minuteHistoryBuffer),
       currentState_(currentState) {}
 
 void WebUi::begin() {
@@ -956,7 +1025,7 @@ void WebUi::handleHealth_() {
   doc["load_ok"] = sensors_.load().ok;
   doc["i2c_map"] = buildInaMapText(config);
   JsonObject healthRoot = doc.as<JsonObject>();
-  appendRuntimeConfig(healthRoot, config, sensors_, historyBuffer_);
+  appendRuntimeConfig(healthRoot, config, sensors_, historyBuffer_, minuteHistoryBuffer_);
   appendInaConfig(healthRoot, config);
   appendLedPwmConfig(healthRoot, config, ledPwmController_.runtime());
 
@@ -1020,7 +1089,7 @@ void WebUi::handleStatus_() {
   doc["battery_percent_valid"] = batteryPercentValid;
   doc["api_key_configured"] = !config.apiKey.isEmpty();
   JsonObject statusRoot = doc.as<JsonObject>();
-  appendRuntimeConfig(statusRoot, config, sensors_, historyBuffer_);
+  appendRuntimeConfig(statusRoot, config, sensors_, historyBuffer_, minuteHistoryBuffer_);
   appendBatteryProfileFields(statusRoot, config);
   appendInaConfig(statusRoot, config);
   appendFlowThresholdConfig(statusRoot, config);
@@ -1045,17 +1114,46 @@ void WebUi::handleStatus_() {
 }
 
 void WebUi::handleHistory_() {
-  DynamicJsonDocument doc(98304);
   const DeviceConfig& config = wifiService_.config();
-  doc["count"] = historyBuffer_.count();
-  doc["capacity"] = historyBuffer_.capacity();
-  doc["history_interval_ms"] = config.historyIntervalMs;
+  const HistoryViewMode viewMode = parseHistoryViewMode(server_.arg("view"));
+  const HistoryBuffer& selectedBuffer =
+      historyBufferForView(viewMode, historyBuffer_, minuteHistoryBuffer_);
+  const uint32_t intervalMs = historyIntervalMsForView(config, viewMode);
+  const size_t availableCount = selectedBuffer.count();
+
+  uint32_t requestedLimit = server_.arg("limit").isEmpty() ? config.chartPointLimit
+                                                           : server_.arg("limit").toInt();
+  if (requestedLimit == 0U) {
+    requestedLimit = config.chartPointLimit;
+  }
+
+  if (requestedLimit < Config::kMinChartPointLimit) {
+    requestedLimit = Config::kMinChartPointLimit;
+  }
+
+  if (requestedLimit > selectedBuffer.capacity()) {
+    requestedLimit = selectedBuffer.capacity();
+  }
+
+  const size_t emitCount = availableCount > requestedLimit ? requestedLimit : availableCount;
+  const size_t startIndex = availableCount > emitCount ? availableCount - emitCount : 0U;
+
+  DynamicJsonDocument doc(196608);
+  doc["view"] = historyViewModeText(viewMode);
+  doc["sample_mode"] = "instant_snapshot";
+  doc["sample_note"] = historySampleNote(viewMode);
+  doc["count"] = emitCount;
+  doc["available_count"] = availableCount;
+  doc["capacity"] = selectedBuffer.capacity();
+  doc["interval_ms"] = intervalMs;
+  doc["history_interval_ms"] = intervalMs;
   doc["chart_point_limit"] = config.chartPointLimit;
+  doc["ina_averaging_samples"] = config.inaAveragingSamples;
 
   JsonArray points = doc.createNestedArray("points");
-  for (size_t index = 0; index < historyBuffer_.count(); ++index) {
+  for (size_t index = startIndex; index < availableCount; ++index) {
     HistoryPoint point;
-    if (!historyBuffer_.getOrdered(index, point)) {
+    if (!selectedBuffer.getOrdered(index, point)) {
       continue;
     }
 
@@ -1126,7 +1224,7 @@ void WebUi::handleConfig_() {
   doc["battery_capacity_mah"] = Config::kBatteryCapacityMah;
   doc["i2c_map"] = buildInaMapText(config);
   JsonObject configRoot = doc.as<JsonObject>();
-  appendRuntimeConfig(configRoot, config, sensors_, historyBuffer_);
+  appendRuntimeConfig(configRoot, config, sensors_, historyBuffer_, minuteHistoryBuffer_);
   appendBatteryProfileFields(configRoot, config);
   appendInaConfig(configRoot, config);
   appendFlowThresholdConfig(configRoot, config);
@@ -1315,7 +1413,7 @@ void WebUi::handleSaveRuntime_() {
   doc["message"] = "Runtime sampling applied";
   JsonObject root = doc.as<JsonObject>();
   root["sample_interval_ms"] = wifiService_.config().sampleIntervalMs;
-  appendRuntimeConfig(root, wifiService_.config(), sensors_, historyBuffer_);
+  appendRuntimeConfig(root, wifiService_.config(), sensors_, historyBuffer_, minuteHistoryBuffer_);
 
   String body;
   serializeJson(doc, body);

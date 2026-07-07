@@ -57,14 +57,15 @@ constexpr uint32_t kMaxSampleIntervalMs = 60000;
 constexpr uint32_t kDefaultHistoryIntervalMs = 100;
 constexpr uint32_t kMinHistoryIntervalMs = 10;
 constexpr uint32_t kMaxHistoryIntervalMs = 60000;
-constexpr uint32_t kDefaultChartPointLimit = 180;
+constexpr uint32_t kMinuteHistoryIntervalMs = 1000;
+constexpr uint32_t kDefaultChartPointLimit = 300;
 constexpr uint32_t kMinChartPointLimit = 30;
 constexpr uint32_t kSerialReportIntervalMs = 1000;
 constexpr uint32_t kWifiConnectTimeoutMs = 15000;
 constexpr uint32_t kRebootDelayMs = 1200;
 constexpr uint16_t kArduinoOtaPort = 3232;
 
-constexpr size_t kHistoryCapacity = 300;
+constexpr size_t kHistoryCapacity = 600;
 constexpr size_t kBackendQueueCapacity = 32;
 constexpr size_t kBackendBatchMaxSamples = 8;
 

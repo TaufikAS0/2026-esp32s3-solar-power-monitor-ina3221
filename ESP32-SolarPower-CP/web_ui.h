@@ -23,6 +23,7 @@ public:
         AnalysisSnapshot& analysis,
         I2cScanner& i2cScanner,
         HistoryBuffer& historyBuffer,
+        HistoryBuffer& minuteHistoryBuffer,
         PowerSystemState& currentState);
 
   void begin();
@@ -38,6 +39,7 @@ private:
   AnalysisSnapshot& analysis_;
   I2cScanner& i2cScanner_;
   HistoryBuffer& historyBuffer_;
+  HistoryBuffer& minuteHistoryBuffer_;
   PowerSystemState& currentState_;
 
   void registerRoutes_();

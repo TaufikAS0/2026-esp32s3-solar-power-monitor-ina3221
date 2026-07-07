@@ -20,6 +20,7 @@ AnalysisSnapshot gAnalysis;
 I2cScanner gI2cScanner;
 LedPwmController gLedPwmController;
 HistoryBuffer gHistoryBuffer;
+HistoryBuffer gMinuteHistoryBuffer;
 SerialReporter gSerialReporter;
 PowerSystemState gCurrentState = PowerSystemState::SensorError;
 OtaService gOtaService(gWifiService);
@@ -32,28 +33,37 @@ WebUi gWebUi(gWifiService,
              gAnalysis,
              gI2cScanner,
              gHistoryBuffer,
+             gMinuteHistoryBuffer,
              gCurrentState);
 
 uint32_t gLastHistorySampleMs = 0;
+uint32_t gLastMinuteHistorySampleMs = 0;
 uint32_t gLastBackendCaptureMs = 0;
 
+void captureHistoryPoint(HistoryBuffer& buffer, uint32_t nowMs) {
+  buffer.add(nowMs,
+             gInaSensors.solar().powerMw,
+             gInaSensors.battery().powerMw,
+             computeBatteryPowerSignedMw(gInaSensors.battery(), gWifiService.config()),
+             gInaSensors.load().powerMw,
+             gInaSensors.solar().loadVoltageV,
+             gInaSensors.battery().loadVoltageV,
+             gInaSensors.load().loadVoltageV,
+             gInaSensors.solar().currentMa,
+             gInaSensors.battery().currentMa,
+             gInaSensors.load().currentMa);
+}
+
 void updateHistory(uint32_t nowMs) {
-  if (nowMs - gLastHistorySampleMs < gWifiService.config().historyIntervalMs) {
-    return;
+  if (nowMs - gLastHistorySampleMs >= gWifiService.config().historyIntervalMs) {
+    gLastHistorySampleMs = nowMs;
+    captureHistoryPoint(gHistoryBuffer, nowMs);
   }
 
-  gLastHistorySampleMs = nowMs;
-  gHistoryBuffer.add(nowMs,
-                     gInaSensors.solar().powerMw,
-                     gInaSensors.battery().powerMw,
-                     computeBatteryPowerSignedMw(gInaSensors.battery(), gWifiService.config()),
-                     gInaSensors.load().powerMw,
-                     gInaSensors.solar().loadVoltageV,
-                     gInaSensors.battery().loadVoltageV,
-                     gInaSensors.load().loadVoltageV,
-                     gInaSensors.solar().currentMa,
-                     gInaSensors.battery().currentMa,
-                     gInaSensors.load().currentMa);
+  if (nowMs - gLastMinuteHistorySampleMs >= Config::kMinuteHistoryIntervalMs) {
+    gLastMinuteHistorySampleMs = nowMs;
+    captureHistoryPoint(gMinuteHistoryBuffer, nowMs);
+  }
 }
 
 void updateBackendCapture(uint32_t nowMs) {
