@@ -11,12 +11,21 @@ void OtaService::begin() {
 }
 
 void OtaService::update() {
-  if (!started_) {
-    tryStart_();
+  const bool shouldRun = wifiService_.config().otaEnabled && wifiService_.isStaConnected();
+  if (!shouldRun) {
+    if (started_) {
+      ArduinoOTA.end();
+      started_ = false;
+      transferInProgress_ = false;
+    }
+    state_ = wifiService_.config().otaEnabled ? "waiting" : "off";
+    message_ = wifiService_.config().otaEnabled ? "OTA enabled, waiting for STA connection."
+                                                : "OTA disabled in config.";
     return;
   }
 
-  if (!wifiService_.config().otaEnabled || !wifiService_.isStaConnected()) {
+  if (!started_) {
+    tryStart_();
     return;
   }
 

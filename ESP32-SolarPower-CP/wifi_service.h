@@ -39,6 +39,15 @@ struct DeviceConfig {
   uint32_t ledPwmFlashPeriodMs = Config::kLedPwmFlashDefaultPeriodMs;
 };
 
+struct WifiRuntime {
+  bool staConnectedOnce = false;
+  uint32_t staReconnectAttempts = 0;
+  uint32_t staDisconnectCount = 0;
+  uint32_t lastStaConnectMs = 0;
+  uint32_t lastStaDisconnectMs = 0;
+  uint32_t lastStaReconnectAttemptMs = 0;
+};
+
 class WifiService {
 public:
   void begin();
@@ -48,6 +57,7 @@ public:
   bool isStaConnected() const;
   bool hasWifiCredentials() const;
   const DeviceConfig& config() const;
+  const WifiRuntime& runtime() const;
 
   String ipAddress() const;
   String wifiModeName() const;
@@ -99,6 +109,8 @@ private:
   uint32_t wifiConnectStartedMs_ = 0;
   uint32_t rebootAtMs_ = 0;
   String accessPointSsid_;
+  WifiRuntime runtime_;
+  uint8_t lastWifiStatus_ = 0;
 
   void loadConfig_();
   void saveString_(const char* key, const String& value);

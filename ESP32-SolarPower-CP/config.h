@@ -63,6 +63,7 @@ constexpr uint32_t kMinChartPointLimit = 30;
 constexpr uint32_t kMaxChartPointLimit = 2000;
 constexpr uint32_t kSerialReportIntervalMs = 1000;
 constexpr uint32_t kWifiConnectTimeoutMs = 15000;
+constexpr uint32_t kWifiReconnectIntervalMs = 5000;
 constexpr uint32_t kRebootDelayMs = 1200;
 constexpr uint16_t kArduinoOtaPort = 3232;
 

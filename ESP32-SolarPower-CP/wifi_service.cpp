@@ -10,6 +10,8 @@
 void WifiService::begin() {
   preferences_.begin(Config::kPrefsNamespace, false);
   loadConfig_();
+  runtime_ = WifiRuntime{};
+  lastWifiStatus_ = 0U;
 
   if (config_.wifiSsid.isEmpty()) {
     config_.wifiSsid = Config::kDefaultWifiSsid;
@@ -36,16 +38,41 @@ void WifiService::update(uint32_t nowMs) {
     ESP.restart();
   }
 
+  const uint8_t wifiStatus = static_cast<uint8_t>(WiFi.status());
+  if (!apMode_) {
+    if (wifiStatus == static_cast<uint8_t>(WL_CONNECTED)) {
+      if (lastWifiStatus_ != wifiStatus) {
+        runtime_.staConnectedOnce = true;
+        runtime_.lastStaConnectMs = nowMs;
+      }
+      lastWifiStatus_ = wifiStatus;
+      return;
+    }
+
+    if (lastWifiStatus_ == static_cast<uint8_t>(WL_CONNECTED)) {
+      ++runtime_.staDisconnectCount;
+      runtime_.lastStaDisconnectMs = nowMs;
+    }
+  }
+
+  lastWifiStatus_ = wifiStatus;
+
   if (apMode_) {
     return;
   }
 
-  if (WiFi.status() == WL_CONNECTED) {
+  if (!runtime_.staConnectedOnce) {
+    if (nowMs - wifiConnectStartedMs_ >= Config::kWifiConnectTimeoutMs) {
+      startAccessPoint_();
+    }
     return;
   }
 
-  if (nowMs - wifiConnectStartedMs_ >= Config::kWifiConnectTimeoutMs) {
-    startAccessPoint_();
+  if (runtime_.lastStaReconnectAttemptMs == 0U ||
+      nowMs - runtime_.lastStaReconnectAttemptMs >= Config::kWifiReconnectIntervalMs) {
+    runtime_.lastStaReconnectAttemptMs = nowMs;
+    ++runtime_.staReconnectAttempts;
+    WiFi.reconnect();
   }
 }
 
@@ -63,6 +90,10 @@ bool WifiService::hasWifiCredentials() const {
 
 const DeviceConfig& WifiService::config() const {
   return config_;
+}
+
+const WifiRuntime& WifiService::runtime() const {
+  return runtime_;
 }
 
 String WifiService::ipAddress() const {
@@ -235,6 +266,7 @@ bool WifiService::saveBackendConfig(bool enabled,
   if (!apiKey.isEmpty()) {
     config_.apiKey = apiKey;
     saveString_("api_key", config_.apiKey);
+    return true;
   }
 
   return true;
@@ -358,7 +390,9 @@ void WifiService::loadConfig_() {
        storedLedPwmDutyPercent == Config::kLedPwmDefaultDutyPercent);
   if (ledPwmRolloutVersion < 1U) {
     if (looksLikeLegacyLedPwmDefault) {
+      config_.ledPwmEnabled = Config::kLedPwmDefaultEnabled;
       config_.ledPwmFrequencyHz = Config::kLedPwmDefaultFrequencyHz;
+      saveBool_("led_pwm_en", config_.ledPwmEnabled);
       saveUInt_("led_pwm_hz", config_.ledPwmFrequencyHz);
     }
     saveUInt_("led_pwm_rollout_v1", 1U);
@@ -401,6 +435,7 @@ void WifiService::startStation_() {
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);
   WiFi.persistent(false);
   WiFi.begin(config_.wifiSsid.c_str(), config_.wifiPass.c_str());
   wifiConnectStartedMs_ = millis();
@@ -418,14 +453,19 @@ void WifiService::startAccessPoint_() {
 String WifiService::buildDefaultDeviceId_() const {
   const uint64_t chipId = ESP.getEfuseMac();
   char buffer[24];
-  snprintf(buffer, sizeof(buffer), "solar-%06llX", static_cast<unsigned long long>(chipId & 0xFFFFFFULL));
+  snprintf(buffer,
+           sizeof(buffer),
+           "solar-%06llX",
+           static_cast<unsigned long long>(chipId & 0xFFFFFFULL));
   return String(buffer);
 }
 
 String WifiService::buildAccessPointSsid_() const {
   const uint64_t chipId = ESP.getEfuseMac();
   char buffer[40];
-  snprintf(buffer, sizeof(buffer), "SolarMonitor-Setup-%06llX",
+  snprintf(buffer,
+           sizeof(buffer),
+           "SolarMonitor-Setup-%06llX",
            static_cast<unsigned long long>(chipId & 0xFFFFFFULL));
   return String(buffer);
 }
@@ -500,7 +540,11 @@ uint32_t WifiService::normalizeChartPointLimit_(uint32_t value) const {
 }
 
 uint32_t WifiService::normalizeInaAveragingSamples_(uint32_t value) const {
-  return normalizeIna3221AveragingSamples(value);
+  if (value < 1U) {
+    return 1U;
+  }
+
+  return value > 1024U ? 1024U : value;
 }
 
 uint32_t WifiService::normalizeInaConversionTimeUs_(uint32_t value) const {
@@ -568,7 +612,7 @@ uint32_t WifiService::normalizeLedPwmFlashPeriodMs_(uint32_t value) const {
 }
 
 float WifiService::normalizeShuntMilliOhms_(float value, float fallbackValue) const {
-  if (!isfinite(value)) {
+  if (isnan(value) || isinf(value)) {
     return fallbackValue;
   }
 
@@ -582,4 +626,3 @@ float WifiService::normalizeShuntMilliOhms_(float value, float fallbackValue) co
 
   return value;
 }
-

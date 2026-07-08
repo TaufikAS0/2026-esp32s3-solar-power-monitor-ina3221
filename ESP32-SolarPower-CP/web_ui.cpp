@@ -44,6 +44,15 @@ void appendBackendSenderStatus(JsonObject object, const BackendSenderRuntime& ru
   object["backend_next_retry_in_ms"] = runtime.nextRetryInMs;
 }
 
+void appendWifiRuntimeStatus(JsonObject object, const WifiRuntime& runtime) {
+  object["wifi_sta_connected_once"] = runtime.staConnectedOnce;
+  object["wifi_disconnect_count"] = runtime.staDisconnectCount;
+  object["wifi_reconnect_attempts"] = runtime.staReconnectAttempts;
+  object["wifi_last_connect_ms"] = runtime.lastStaConnectMs;
+  object["wifi_last_disconnect_ms"] = runtime.lastStaDisconnectMs;
+  object["wifi_last_reconnect_attempt_ms"] = runtime.lastStaReconnectAttemptMs;
+}
+
 void appendFlowThresholdConfig(JsonObject object, const DeviceConfig& config) {
   object["solar_active_threshold_mw"] = config.solarActiveThresholdMw;
   object["load_active_threshold_mw"] = config.loadActiveThresholdMw;
@@ -1077,7 +1086,10 @@ void WebUi::handleRoot_() {
 void WebUi::handleHealth_() {
   DynamicJsonDocument doc(2048);
   const DeviceConfig& config = wifiService_.config();
+  const WifiRuntime& wifiRuntime = wifiService_.runtime();
   doc["ok"] = true;
+  doc["timestamp_ms"] = millis();
+  doc["uptime_ms"] = millis();
   doc["firmware_version"] = FirmwareInfo::kVersion;
   doc["release_label"] = FirmwareInfo::kReleaseLabel;
   doc["build_date"] = FirmwareInfo::kBuildDate;
@@ -1095,7 +1107,11 @@ void WebUi::handleHealth_() {
   doc["sensor_health"] = sensorHealthText(sensors_.solar(), sensors_.battery(), sensors_.load());
   doc["load_ok"] = sensors_.load().ok;
   doc["i2c_map"] = buildInaMapText(config);
+  doc["wifi_sta_connected"] = wifiService_.isStaConnected();
+  doc["free_heap_bytes"] = ESP.getFreeHeap();
+  doc["min_free_heap_bytes"] = ESP.getMinFreeHeap();
   JsonObject healthRoot = doc.as<JsonObject>();
+  appendWifiRuntimeStatus(healthRoot, wifiRuntime);
   appendRuntimeConfig(
       healthRoot, config, sensors_, rawHistoryBuffer_, historyBuffer_, minuteHistoryBuffer_);
   appendInaConfig(healthRoot, config);
@@ -1109,6 +1125,7 @@ void WebUi::handleHealth_() {
 void WebUi::handleStatus_() {
   DynamicJsonDocument doc(9216);
   const DeviceConfig& config = wifiService_.config();
+  const WifiRuntime& wifiRuntime = wifiService_.runtime();
   const bool solarActive = isSolarActive(sensors_.solar(), config);
   const bool loadActive = isLoadActive(sensors_.load(), config);
   const BatteryDirection batteryDirection = evaluateBatteryDirection(sensors_.battery(), config);
@@ -1128,6 +1145,7 @@ void WebUi::handleStatus_() {
           : 0.0f;
 
   doc["timestamp_ms"] = millis();
+  doc["uptime_ms"] = millis();
   doc["firmware_version"] = FirmwareInfo::kVersion;
   doc["release_label"] = FirmwareInfo::kReleaseLabel;
   doc["build_date"] = FirmwareInfo::kBuildDate;
@@ -1160,7 +1178,11 @@ void WebUi::handleStatus_() {
   doc["battery_percent"] = batteryPercent;
   doc["battery_percent_valid"] = batteryPercentValid;
   doc["api_key_configured"] = !config.apiKey.isEmpty();
+  doc["wifi_sta_connected"] = wifiService_.isStaConnected();
+  doc["free_heap_bytes"] = ESP.getFreeHeap();
+  doc["min_free_heap_bytes"] = ESP.getMinFreeHeap();
   JsonObject statusRoot = doc.as<JsonObject>();
+  appendWifiRuntimeStatus(statusRoot, wifiRuntime);
   appendRuntimeConfig(
       statusRoot, config, sensors_, rawHistoryBuffer_, historyBuffer_, minuteHistoryBuffer_);
   appendBatteryProfileFields(statusRoot, config);
