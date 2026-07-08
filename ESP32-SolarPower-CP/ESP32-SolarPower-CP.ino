@@ -16,6 +16,8 @@
 namespace {
 
 WifiService gWifiService;
+#include <algorithm>
+
 InaSensors gInaSensors;
 AnalysisSnapshot gAnalysis;
 I2cScanner gI2cScanner;
@@ -57,6 +59,62 @@ void captureHistoryPoint(HistoryBuffer& buffer, uint32_t nowMs) {
              gInaSensors.load().currentMa);
 }
 
+float representativeHistoryValue(const HistoryBuffer& buffer,
+                                 uint32_t windowStartMs,
+                                 float HistoryPoint::* field,
+                                 bool* hasSamples = nullptr) {
+  float values[Config::kHistoryCapacity];
+  size_t sampleCount = 0U;
+  const size_t availableCount = buffer.count();
+  HistoryPoint point;
+
+  for (size_t index = 0U; index < availableCount; ++index) {
+    if (!buffer.getOrdered(index, point)) {
+      continue;
+    }
+    if (point.timestampMs < windowStartMs) {
+      continue;
+    }
+    values[sampleCount++] = point.*field;
+  }
+
+  if (hasSamples != nullptr) {
+    *hasSamples = sampleCount > 0U;
+  }
+
+  if (sampleCount == 0U) {
+    return 0.0f;
+  }
+
+  std::sort(values, values + sampleCount);
+  return values[sampleCount / 2U];
+}
+
+void captureMinuteHistoryPoint(uint32_t nowMs) {
+  const uint32_t windowStartMs =
+      nowMs > Config::kMinuteHistoryIntervalMs ? nowMs - Config::kMinuteHistoryIntervalMs : 0U;
+  bool hasSamples = false;
+  const float solarPowerMw =
+      representativeHistoryValue(gHistoryBuffer, windowStartMs, &HistoryPoint::solarPowerMw, &hasSamples);
+  if (!hasSamples) {
+    captureHistoryPoint(gMinuteHistoryBuffer, nowMs);
+    return;
+  }
+
+  gMinuteHistoryBuffer.add(
+      nowMs,
+      solarPowerMw,
+      representativeHistoryValue(gHistoryBuffer, windowStartMs, &HistoryPoint::batteryPowerMw),
+      representativeHistoryValue(gHistoryBuffer, windowStartMs, &HistoryPoint::batteryPowerSignedMw),
+      representativeHistoryValue(gHistoryBuffer, windowStartMs, &HistoryPoint::loadPowerMw),
+      representativeHistoryValue(gHistoryBuffer, windowStartMs, &HistoryPoint::solarVoltageV),
+      representativeHistoryValue(gHistoryBuffer, windowStartMs, &HistoryPoint::batteryVoltageV),
+      representativeHistoryValue(gHistoryBuffer, windowStartMs, &HistoryPoint::loadVoltageV),
+      representativeHistoryValue(gHistoryBuffer, windowStartMs, &HistoryPoint::solarCurrentMa),
+      representativeHistoryValue(gHistoryBuffer, windowStartMs, &HistoryPoint::batteryCurrentMa),
+      representativeHistoryValue(gHistoryBuffer, windowStartMs, &HistoryPoint::loadCurrentMa));
+}
+
 void captureRawHistoryPoint(RawHistoryBuffer& buffer, uint32_t nowMs) {
   buffer.add(nowMs,
              gInaSensors.solar().loadVoltageV,
@@ -75,7 +133,7 @@ void updateHistory(uint32_t nowMs) {
 
   if (nowMs - gLastMinuteHistorySampleMs >= Config::kMinuteHistoryIntervalMs) {
     gLastMinuteHistorySampleMs = nowMs;
-    captureHistoryPoint(gMinuteHistoryBuffer, nowMs);
+    captureMinuteHistoryPoint(nowMs);
   }
 }
 
