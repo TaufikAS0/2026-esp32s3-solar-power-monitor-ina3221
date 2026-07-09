@@ -6,6 +6,7 @@
 #include "battery_profile.h"
 #include "config.h"
 #include "ina_sensors.h"
+#include "sampling_profile.h"
 
 void WifiService::begin() {
   preferences_.begin(Config::kPrefsNamespace, false);
@@ -418,6 +419,31 @@ void WifiService::loadConfig_() {
     config_.inaAveragingSamples = Config::kDefaultInaAveragingSamples;
     saveUInt_("ina_avg_samples", config_.inaAveragingSamples);
     saveUInt_("ina_runtime_rollout_v1", Config::kInaRuntimeRolloutVersion);
+  }
+
+  const uint32_t samplingRolloutVersion =
+      preferences_.getUInt("sampling_runtime_rollout_v1", 0);
+  if (samplingRolloutVersion < Config::kSamplingRuntimeRolloutVersion) {
+    if (looksLikeLegacyAggressiveSamplingConfig(config_.sampleIntervalMs,
+                                                config_.sensorPollIntervalMs,
+                                                config_.historyIntervalMs,
+                                                config_.chartPointLimit,
+                                                config_.inaAveragingSamples,
+                                                config_.inaBusConvTimeUs,
+                                                config_.inaShuntConvTimeUs)) {
+      const SamplingProfilePreset* preset =
+          findSamplingProfilePreset(Config::kDefaultSamplingProfileId);
+      if (preset != nullptr) {
+        saveRuntimeConfig(preset->sampleIntervalMs,
+                          preset->sensorPollIntervalMs,
+                          preset->historyIntervalMs,
+                          preset->chartPointLimit,
+                          preset->inaAveragingSamples,
+                          preset->inaBusConvTimeUs,
+                          preset->inaShuntConvTimeUs);
+      }
+    }
+    saveUInt_("sampling_runtime_rollout_v1", Config::kSamplingRuntimeRolloutVersion);
   }
 }
 

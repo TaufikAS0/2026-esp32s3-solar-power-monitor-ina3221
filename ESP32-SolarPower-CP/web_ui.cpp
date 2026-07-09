@@ -6,6 +6,7 @@
 
 #include "battery_profile.h"
 #include "config.h"
+#include "sampling_profile.h"
 
 namespace {
 
@@ -147,10 +148,32 @@ void appendRuntimeConfig(JsonObject object,
   const InaTimingProfile timing = describeIna3221Timing(config.inaAveragingSamples,
                                                         config.inaBusConvTimeUs,
                                                         config.inaShuntConvTimeUs);
+  const SamplingProfilePreset* samplingProfile =
+      matchSamplingProfilePreset(config.sampleIntervalMs,
+                                 config.sensorPollIntervalMs,
+                                 config.historyIntervalMs,
+                                 config.chartPointLimit,
+                                 timing.averagingSamples,
+                                 timing.busConvTimeUs,
+                                 timing.shuntConvTimeUs);
   String configRegisterHex = "0x";
   configRegisterHex += String(timing.configRegister, HEX);
   configRegisterHex.toUpperCase();
+  const uint32_t fallbackTargetHz = static_cast<uint32_t>(
+      roundf(1000.0f / static_cast<float>(config.sensorPollIntervalMs == 0U
+                                              ? 1U
+                                              : config.sensorPollIntervalMs)));
 
+  object["sampling_profile_id"] = samplingProfile != nullptr ? samplingProfile->id : "custom";
+  object["sampling_profile_label"] =
+      samplingProfile != nullptr ? samplingProfile->label : "Custom";
+  object["sampling_profile_summary"] = samplingProfile != nullptr
+                                           ? samplingProfile->summary
+                                           : "Mode custom aktif. Gunakan preset aman jika device perlu soak stabil.";
+  object["sampling_profile_target_hz"] =
+      samplingProfile != nullptr ? samplingProfile->targetHz : fallbackTargetHz;
+  object["sampling_profile_safe"] =
+      samplingProfile != nullptr ? samplingProfile->beginnerSafe : false;
   object["sensor_poll_interval_ms"] = config.sensorPollIntervalMs;
   object["history_interval_ms"] = config.historyIntervalMs;
   object["chart_point_limit"] = config.chartPointLimit;
@@ -653,62 +676,73 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     </div>
 
     <div class="card">
-      <div class="lbl">Runtime Sampling</div>
-      <div class="sub" style="margin-bottom:10px">Pisahkan sensor poll, history buffer, dan report/send interval. Mode default sekarang diarahkan ke sampling cepat INA3221.</div>
-      <div class="sub" style="margin-bottom:6px">Sensor poll interval</div>
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <input class="inp" id="cfg-sensor-poll" type="number" value="1" min="1" max="60000" style="flex:1">
-        <span class="sub">ms</span>
+      <div class="lbl">Sampling Mode</div>
+      <div class="sub" style="margin-bottom:10px">Pilih preset aman dulu. Mode ini menurunkan beban telemetry dan tetap menjaga raw history browser stabil untuk pemakaian panjang.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px">
+        <button class="btn-primary" id="apply-sampling-safe-53">Stable 53 Hz</button>
+        <button class="btn-secondary" id="apply-sampling-safe-100">Balanced 100 Hz</button>
       </div>
-      <div class="sub" style="margin-bottom:6px">Report / send interval</div>
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <input class="inp" id="cfg-interval" type="number" value="1000" min="200" max="60000" style="flex:1">
-        <span class="sub">ms</span>
-      </div>
-      <div class="sub" style="margin-bottom:6px">History sample interval</div>
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <input class="inp" id="cfg-history-interval" type="number" value="100" min="10" max="60000" style="flex:1">
-        <span class="sub">ms</span>
-      </div>
-      <div class="sub" style="margin-bottom:6px">Chart points shown</div>
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
-        <input class="inp" id="cfg-chart-points" type="number" value="180" min="30" max="2000" style="flex:1">
-        <span class="sub">pts</span>
-      </div>
-      <div class="sub" style="margin-bottom:6px">INA averaging</div>
-      <select class="inp" id="cfg-ina-avg" style="margin-bottom:8px">
-        <option value="1">1 sample</option>
-        <option value="4">4 samples</option>
-        <option value="16">16 samples</option>
-        <option value="64">64 samples</option>
-        <option value="128">128 samples</option>
-        <option value="256">256 samples</option>
-        <option value="512">512 samples</option>
-        <option value="1024">1024 samples</option>
-      </select>
-      <div class="sub" style="margin-bottom:6px">INA bus conversion</div>
-      <select class="inp" id="cfg-ina-bus-us" style="margin-bottom:8px">
-        <option value="140">140 us</option>
-        <option value="204">204 us</option>
-        <option value="332">332 us</option>
-        <option value="588">588 us</option>
-        <option value="1100">1.1 ms</option>
-        <option value="2116">2.116 ms</option>
-        <option value="4156">4.156 ms</option>
-        <option value="8244">8.244 ms</option>
-      </select>
-      <div class="sub" style="margin-bottom:6px">INA shunt conversion</div>
-      <select class="inp" id="cfg-ina-shunt-us" style="margin-bottom:10px">
-        <option value="140">140 us</option>
-        <option value="204">204 us</option>
-        <option value="332">332 us</option>
-        <option value="588">588 us</option>
-        <option value="1100">1.1 ms</option>
-        <option value="2116">2.116 ms</option>
-        <option value="4156">4.156 ms</option>
-        <option value="8244">8.244 ms</option>
-      </select>
-      <button class="btn-primary" id="apply-interval" style="width:100%">Apply Sampling Runtime</button>
+      <div class="sub" id="sampling-profile-line" style="margin-bottom:6px">Mode: --</div>
+      <div class="sub" id="sampling-profile-note" style="margin-bottom:6px">--</div>
+      <div class="sub" id="sampling-runtime-brief" style="margin-bottom:8px">--</div>
+      <details id="sampling-advanced" style="margin-top:8px;border:1px solid var(--border);border-radius:12px;background:#0a1220;padding:10px 12px">
+        <summary style="cursor:pointer;color:var(--text);font-size:13px">Advanced Sampling</summary>
+        <div class="sub" style="margin:10px 0">Gunakan hanya untuk eksperimen. Menyimpan preset aman akan menimpa semua field di bawah.</div>
+        <div class="sub" style="margin-bottom:6px">Sensor poll interval</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+          <input class="inp" id="cfg-sensor-poll" type="number" value="19" min="1" max="60000" style="flex:1">
+          <span class="sub">ms</span>
+        </div>
+        <div class="sub" style="margin-bottom:6px">Report / send interval</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+          <input class="inp" id="cfg-interval" type="number" value="2000" min="200" max="60000" style="flex:1">
+          <span class="sub">ms</span>
+        </div>
+        <div class="sub" style="margin-bottom:6px">History sample interval</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+          <input class="inp" id="cfg-history-interval" type="number" value="1000" min="10" max="60000" style="flex:1">
+          <span class="sub">ms</span>
+        </div>
+        <div class="sub" style="margin-bottom:6px">Chart points shown</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
+          <input class="inp" id="cfg-chart-points" type="number" value="120" min="30" max="2000" style="flex:1">
+          <span class="sub">pts</span>
+        </div>
+        <div class="sub" style="margin-bottom:6px">INA averaging</div>
+        <select class="inp" id="cfg-ina-avg" style="margin-bottom:8px">
+          <option value="1">1 sample</option>
+          <option value="4">4 samples</option>
+          <option value="16">16 samples</option>
+          <option value="64">64 samples</option>
+          <option value="128">128 samples</option>
+          <option value="256">256 samples</option>
+          <option value="512">512 samples</option>
+          <option value="1024">1024 samples</option>
+        </select>
+        <div class="sub" style="margin-bottom:6px">INA bus conversion</div>
+        <select class="inp" id="cfg-ina-bus-us" style="margin-bottom:8px">
+          <option value="140">140 us</option>
+          <option value="204">204 us</option>
+          <option value="332">332 us</option>
+          <option value="588">588 us</option>
+          <option value="1100">1.1 ms</option>
+          <option value="2116">2.116 ms</option>
+          <option value="4156">4.156 ms</option>
+          <option value="8244">8.244 ms</option>
+        </select>
+        <div class="sub" style="margin-bottom:6px">INA shunt conversion</div>
+        <select class="inp" id="cfg-ina-shunt-us" style="margin-bottom:10px">
+          <option value="140">140 us</option>
+          <option value="204">204 us</option>
+          <option value="332">332 us</option>
+          <option value="588">588 us</option>
+          <option value="1100">1.1 ms</option>
+          <option value="2116">2.116 ms</option>
+          <option value="4156">4.156 ms</option>
+          <option value="8244">8.244 ms</option>
+        </select>
+        <button class="btn-secondary" id="apply-interval" style="width:100%">Save Advanced Sampling</button>
+      </details>
       <div class="sub" id="interval-note" style="margin-top:8px">--</div>
       <div class="sub" id="runtime-ina-note" style="margin-top:6px">--</div>
     </div>
@@ -836,7 +870,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function moveChartSelection(ev){if(!zoomSelection.active||zoomSelection.chartId!==ev.currentTarget.id)return;zoomSelection.endPx=canvasPixelX(ev);const chart=chartByCanvasId(zoomSelection.chartId);if(chart)chart.draw()}
     function endChartSelection(){if(!zoomSelection.active)return;const chartId=zoomSelection.chartId,chart=chartByCanvasId(chartId),left=Math.min(zoomSelection.startPx,zoomSelection.endPx),right=Math.max(zoomSelection.startPx,zoomSelection.endPx);zoomSelection.active=false;zoomSelection.chartId='';if(chart)chart.draw();if(!chart||right-left<10||!lastRendered.viewEndMs)return;const xScale=chart.scales.x,relStart=xScale.getValueForPixel(left),relEnd=xScale.getValueForPixel(right),startMs=lastRendered.viewEndMs+Math.min(relStart,relEnd)*1000,endMs=lastRendered.viewEndMs+Math.max(relStart,relEnd)*1000;if(!Number.isFinite(startMs)||!Number.isFinite(endMs)||endMs-startMs<50)return;viewFollowLive=false;viewStartMs=startMs;viewEndMs=endMs;renderHistoryFromBrowser('Zoom '+formatHistorySpan(endMs-startMs)+' selected.')}
     function installChartInteractions(){['powerChart','voltageChart','currentChart'].forEach(id=>{const canvas=document.getElementById(id);if(!canvas||canvas.dataset.zoomReady==='1')return;canvas.dataset.zoomReady='1';canvas.addEventListener('mousedown',beginChartSelection);canvas.addEventListener('mousemove',moveChartSelection);canvas.addEventListener('dblclick',()=>activateLiveLogs('Live logs restored from chart double-click.'))});if(!window.__solarChartSelectionHooked){window.__solarChartSelectionHooked=true;window.addEventListener('mouseup',endChartSelection)}}
-    function sourceModeLabel(mode){if(mode==='raw-live')return'live raw burst';if(mode==='raw-cache')return'browser raw cache';if(mode==='archive-raw')return'browser raw fifo';if(mode==='minute-cache')return'browser cached history';return'device fallback'}
+    function sourceModeLabel(mode){if(mode==='raw-live')return'raw burst';if(mode==='raw-cache')return'raw cache';if(mode==='archive-raw')return'raw fifo';if(mode==='minute-cache')return'cached hist';return'device fallback'}
     function rawSourceCovers(startMs,endMs){return rawHistory.length&&Number(rawHistory[0].t)<=startMs&&Number(rawHistory[rawHistory.length-1].t)>=endMs}
     function archiveSourceCovers(startMs,endMs){return archiveHistory.length&&Number(archiveHistory[0].t)<=startMs&&Number(archiveHistory[archiveHistory.length-1].t)>=endMs}
     function normalizeArchivePoint(item){return{t:Number(item&&item.timestamp_ms)||Date.now(),ps:Number(item&&item.p_solar_mw)||0,pb:Number(item&&item.p_bat_signed_mw!=null?item.p_bat_signed_mw:item&&item.p_bat_mw)||0,pl:Number(item&&item.p_load_mw)||0,vs:Number(item&&item.v_solar_v)||0,vb:Number(item&&item.v_bat_v)||0,vl:Number(item&&item.v_load_v)||0,is:Number(item&&item.i_solar_ma)||0,ib:Number(item&&item.i_bat_ma)||0,il:Number(item&&item.i_load_ma)||0}}
@@ -854,8 +888,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function pushUniqueRawDisplayPoint(target,point){if(!point)return;const last=target.length?target[target.length-1]:null;if(last&&Number(last.seq)===Number(point.seq)&&Number(last.t)===Number(point.t))return;target.push(point)}
     function compactStableRawSamples(points,range,limit){if(points.length<=limit||limit<4)return points.slice();const spanMs=Math.max(1,range&&range.endMs>range.startMs?(range.endMs-range.startMs):((Number(points[points.length-1].t)||Date.now())-(Number(points[0].t)||Date.now()))),bucketBudget=Math.max(1,Math.floor(limit/3)),bucketMs=Math.max(1,Math.ceil(spanMs/bucketBudget)),reduced=[];let bucketStart=0;while(bucketStart<points.length){const bucketId=Math.floor((Number(points[bucketStart].t)||0)/bucketMs);let bucketEnd=bucketStart+1;while(bucketEnd<points.length&&Math.floor((Number(points[bucketEnd].t)||0)/bucketMs)===bucketId)bucketEnd++;const bucketCount=bucketEnd-bucketStart;pushUniqueRawDisplayPoint(reduced,points[bucketStart]);if(bucketCount>2)pushUniqueRawDisplayPoint(reduced,points[bucketStart+Math.floor(bucketCount/2)]);if(bucketCount>1)pushUniqueRawDisplayPoint(reduced,points[bucketEnd-1]);bucketStart=bucketEnd}return reduced.length>limit?downsampleBrowserSamples(reduced,limit):reduced}
     function displaySamplesForScale(points,scale,sourceMode,range){if(sourceUsesStableRaw(sourceMode)){const rawLimit=rawDisplayPointLimit(scale,range);return points.length>rawLimit?compactStableRawSamples(points,range,rawLimit):points.slice()}if(scale.id==='1min'||scale.id==='10min')return points.slice();return points.length>maxPts?downsampleBrowserSamples(points,maxPts):points.slice()}
-    function renderHistoryFromBrowser(noteOverride){const scale=activeHistoryScale(),preferredSource=chooseHistorySource(scale,viewFollowLive?0:viewStartMs,viewFollowLive?0:viewEndMs),baseSource=preferredSource.points;if(!baseSource.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||'Waiting for browser raw history...');return}const viewRange=effectiveViewRange(scale,baseSource),resolvedSource=chooseHistorySource(scale,viewRange.startMs,viewRange.endMs),source=resolvedSource.points;if(!source.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||'Waiting for browser history...');return}const clampedRange=effectiveViewRange(scale,source),startIndex=lowerBoundByTime(source,clampedRange.startMs),endIndex=lowerBoundByTime(source,clampedRange.endMs+1),visible=(startIndex<endIndex?source.slice(startIndex,endIndex):source.slice(Math.max(0,source.length-1))),displayPoints=displaySamplesForScale(visible,scale,resolvedSource.mode,clampedRange),viewEndMsLocal=clampedRange.endMs||Number(source[source.length-1].t)||Date.now(),visibleCount=visible.length,pointSummary=visibleCount!==displayPoints.length?(visibleCount+' pts -> '+displayPoints.length+' chart pts'):(visibleCount+' pts');lastRendered.points=displayPoints.slice();lastRendered.viewStartMs=clampedRange.startMs;lastRendered.viewEndMs=viewEndMsLocal;lastRendered.sourceMode=resolvedSource.mode;lastRendered.scaleId=scale.id;syncCharts(displayPoints,viewEndMsLocal,scale);let tail=' | browser cached view';if(sourceUsesStableRaw(resolvedSource.mode))tail=(visibleCount!==displayPoints.length?' | stable raw pick':' | raw fifo')+' | no avg | avg x'+runtimeInaAvg+' | '+(runtimeMeasuredHz>0?runtimeMeasuredHz.toFixed(1):'0.0')+' Hz';const note=noteOverride||('Mode '+(viewFollowLive?'Live logs':'Zoom inspect')+' | Source '+sourceModeLabel(resolvedSource.mode)+' | '+pointSummary+tail);renderHistoryModeSummary(note)}
-    function renderHistoryModeSummary(noteOverride){const scale=activeHistoryScale(),modeLabel=viewFollowLive?'Live logs':'Zoom inspect',rangeLabel=!viewFollowLive&&viewEndMs>viewStartMs?(' | Sel '+formatHistorySpan(viewEndMs-viewStartMs)):' | Live tail';document.querySelectorAll('[data-history-scale]').forEach(btn=>btn.classList.toggle('active',btn.dataset.historyScale===historyScale));updateLiveLogsButton();document.getElementById('history-mode-note').textContent='Mode '+modeLabel+' | Grid '+scale.label+' | Window '+formatHistorySpan(scale.windowMs)+' | ~'+visibleWindowPointEstimate(scale,lastRendered.sourceMode)+' pts'+rangeLabel;document.getElementById('history-source-note').textContent=noteOverride||('Source '+sourceModeLabel(lastRendered.sourceMode)+' | Raw 10m '+formatHistorySpan(rawBrowserHistorySpanMs())+' | Raw 100m '+formatHistorySpan(archiveRawSpanMs())+' | Fetch '+rawPollMs+' ms / '+effectiveRawFetchLimit()+' pts | drag to zoom | dblclick or Live Logs to follow')}
+    function renderHistoryFromBrowser(noteOverride){const scale=activeHistoryScale(),preferredSource=chooseHistorySource(scale,viewFollowLive?0:viewStartMs,viewFollowLive?0:viewEndMs),baseSource=preferredSource.points;if(!baseSource.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||'Waiting for browser raw history...');return}const viewRange=effectiveViewRange(scale,baseSource),resolvedSource=chooseHistorySource(scale,viewRange.startMs,viewRange.endMs),source=resolvedSource.points;if(!source.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||'Waiting for browser history...');return}const clampedRange=effectiveViewRange(scale,source),startIndex=lowerBoundByTime(source,clampedRange.startMs),endIndex=lowerBoundByTime(source,clampedRange.endMs+1),visible=(startIndex<endIndex?source.slice(startIndex,endIndex):source.slice(Math.max(0,source.length-1))),displayPoints=displaySamplesForScale(visible,scale,resolvedSource.mode,clampedRange),viewEndMsLocal=clampedRange.endMs||Number(source[source.length-1].t)||Date.now(),visibleCount=visible.length,pointSummary=visibleCount!==displayPoints.length?(visibleCount+'->'+displayPoints.length+' pts'):(visibleCount+' pts');lastRendered.points=displayPoints.slice();lastRendered.viewStartMs=clampedRange.startMs;lastRendered.viewEndMs=viewEndMsLocal;lastRendered.sourceMode=resolvedSource.mode;lastRendered.scaleId=scale.id;syncCharts(displayPoints,viewEndMsLocal,scale);let tail=' | cached';if(sourceUsesStableRaw(resolvedSource.mode))tail=(visibleCount!==displayPoints.length?' | stable raw':' | raw fifo')+' | x'+runtimeInaAvg+' | '+(runtimeMeasuredHz>0?runtimeMeasuredHz.toFixed(1):'0.0')+' Hz';const note=noteOverride||('Mode '+(viewFollowLive?'Live':'Zoom')+' | Src '+sourceModeLabel(resolvedSource.mode)+' | '+pointSummary+tail);renderHistoryModeSummary(note)}
+    function renderHistoryModeSummary(noteOverride){const scale=activeHistoryScale(),modeLabel=viewFollowLive?'Live':'Zoom',rangeLabel=!viewFollowLive&&viewEndMs>viewStartMs?(' | Sel '+formatHistorySpan(viewEndMs-viewStartMs)):'';document.querySelectorAll('[data-history-scale]').forEach(btn=>btn.classList.toggle('active',btn.dataset.historyScale===historyScale));updateLiveLogsButton();document.getElementById('history-mode-note').textContent='Mode '+modeLabel+' | '+scale.label+' grid | '+formatHistorySpan(scale.windowMs)+' | ~'+visibleWindowPointEstimate(scale,lastRendered.sourceMode)+' pts'+rangeLabel;document.getElementById('history-source-note').textContent=noteOverride||('Src '+sourceModeLabel(lastRendered.sourceMode)+' | 10m '+formatHistorySpan(rawBrowserHistorySpanMs())+' | 100m '+formatHistorySpan(archiveRawSpanMs())+' | Fetch '+rawPollMs+' ms / '+effectiveRawFetchLimit()+' pts')}
     function setHistoryScale(view){historyScale=(view==='3s'||view==='10s'||view==='1min'||view==='10min')?view:'1s';if(!viewFollowLive&&viewEndMs>viewStartMs){const scale=activeHistoryScale(),centerMs=(viewStartMs+viewEndMs)/2;viewStartMs=centerMs-(scale.windowMs/2);viewEndMs=centerMs+(scale.windowMs/2)}saveHistoryScale();renderHistoryFromBrowser()}
     function flash(id,txt){const el=document.getElementById(id);if(!el)return;el.textContent=txt;el.classList.remove('flashed');void el.offsetWidth;el.classList.add('flashed');setTimeout(()=>el.classList.remove('flashed'),400)}
     function updateArc(arcId,arcTxtId,value,min,max,stroke,labelText){const total=172.8,pct=Math.min(1,Math.max(0,(value-min)/(max-min))),offset=total*(1-pct),arc=document.getElementById(arcId);arc.style.strokeDashoffset=offset;if(stroke)arc.setAttribute('stroke',stroke);document.getElementById(arcTxtId).textContent=labelText!=null?labelText:(Number(value)||0).toFixed(1)+'V'}
@@ -883,7 +917,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function renderWifiConfig(data,syncInputs){const ssid=data.wifi_ssid||'';if(syncInputs&&document.activeElement!==document.getElementById('wifi-ssid'))document.getElementById('wifi-ssid').value=ssid;if(syncInputs)document.getElementById('wifi-pass').value='';document.getElementById('wifi-note').textContent='Current SSID: '+(ssid||'--')+' | Mode: '+(data.wifi_mode||'--')}
     function renderInaConfig(data,syncInputs){const solar=Number(data.solar_shunt_milliohms),battery=Number(data.battery_shunt_milliohms),load=Number(data.load_shunt_milliohms);document.getElementById('solar-shunt-line').textContent='Shunt config: '+formatShunt(solar);document.getElementById('bat-shunt-line').textContent='INA shunt: '+formatShunt(battery);document.getElementById('load-shunt-line').textContent='Shunt config: '+formatShunt(load);document.getElementById('i2c-map-note').textContent='Map: '+(data.i2c_map||('0x40=INA3221, CH1=Solar '+formatShunt(solar)+', CH2=Battery '+formatShunt(battery)+', CH3=Load '+formatShunt(load)));if(syncInputs){if(document.activeElement!==document.getElementById('solar-shunt-mo'))document.getElementById('solar-shunt-mo').value=Number.isFinite(solar)?solar.toFixed(2):'';if(document.activeElement!==document.getElementById('bat-shunt-mo'))document.getElementById('bat-shunt-mo').value=Number.isFinite(battery)?battery.toFixed(2):'';if(document.activeElement!==document.getElementById('load-shunt-mo'))document.getElementById('load-shunt-mo').value=Number.isFinite(load)?load.toFixed(2):'';}}
     function clampChartPoints(v){v=Number(v);if(!Number.isFinite(v))v=300;return Math.max(30,Math.min(historyCapacityMax,Math.round(v)))}
-    function renderRuntimeConfig(data){const reportMs=Math.max(200,Number(data.sample_interval_ms)||1000),sensorPollMs=Math.max(1,Number(data.sensor_poll_interval_ms)||1),historyMs=Math.max(10,Number(data.history_interval_ms)||100),secondsCap=Math.max(30,Number(data.history_seconds_capacity||data.history_capacity)||600),archiveCap=Math.max(60,Number(data.history_minutes_capacity)||600),archiveIntervalMs=Math.max(1000,Number(data.history_minutes_interval_ms)||10000),rawChartPts=Number(data.chart_point_limit)||300,inaAvg=Math.max(1,Number(data.ina_averaging_samples)||1),inaBusUs=Math.max(140,Number(data.ina_bus_conv_us)||140),inaShuntUs=Math.max(140,Number(data.ina_shunt_conv_us)||140),theoryHz=Number(data.ina_estimated_channel_hz)||0,measuredHz=Number(data.sensor_measured_hz)||0,rawEspCapacity=Math.max(1,Number(data.raw_history_capacity)||2048),rawFetchLimit=Math.max(32,Number(data.raw_history_fetch_limit)||256),regHex=data.ina_config_register_hex||'0x7007';historyCapacityMax=Math.max(secondsCap,rawEspCapacity,archiveCap,2000);const chartPts=clampChartPoints(rawChartPts);if(document.activeElement!==document.getElementById('cfg-sensor-poll'))document.getElementById('cfg-sensor-poll').value=sensorPollMs;if(document.activeElement!==document.getElementById('cfg-interval'))document.getElementById('cfg-interval').value=reportMs;if(document.activeElement!==document.getElementById('cfg-history-interval'))document.getElementById('cfg-history-interval').value=historyMs;if(document.activeElement!==document.getElementById('cfg-chart-points'))document.getElementById('cfg-chart-points').value=chartPts;document.getElementById('cfg-ina-avg').value=String(inaAvg);document.getElementById('cfg-ina-bus-us').value=String(inaBusUs);document.getElementById('cfg-ina-shunt-us').value=String(inaShuntUs);runtimeReportMs=reportMs;runtimeSensorPollMs=sensorPollMs;runtimeRawEspCapacity=rawEspCapacity;runtimeRawFetchLimit=rawFetchLimit;runtimeArchiveEspCapacity=archiveCap;runtimeArchiveIntervalMs=archiveIntervalMs;runtimeMeasuredHz=measuredHz;runtimeInaAvg=inaAvg;maxPts=chartPts;setRawPollMs(computeRawPollMs());document.getElementById('interval-note').textContent='Poll '+sensorPollMs+' ms | Status '+reportMs+' ms | Raw '+rawPollMs+' ms / '+effectiveRawFetchLimit()+' pts | ESP '+rawEspCapacity+' pts | Raw 10m '+formatHistorySpan(RAW_HISTORY_KEEP_MS)+' | Raw 100m '+formatHistorySpan(ARCHIVE_RAW_KEEP_MS)+' | Trend chart '+chartPts+' pts';document.getElementById('runtime-ina-note').textContent='INA '+regHex+' | avg x'+inaAvg+' | bus '+inaBusUs+' us | shunt '+inaShuntUs+' us | theory '+(theoryHz?theoryHz.toFixed(1):'0.0')+' Hz | measured '+(measuredHz?measuredHz.toFixed(1):'0.0')+' Hz | drag to zoom | lock Y available';renderHistoryFromBrowser()}
+    function setSamplingPresetButtons(activeId){[['apply-sampling-safe-53','stable_53hz'],['apply-sampling-safe-100','stable_100hz']].forEach(pair=>{const button=document.getElementById(pair[0]);if(!button)return;button.className=activeId===pair[1]?'btn-primary':'btn-secondary'})}
+    function renderRuntimeConfig(data){const reportMs=Math.max(200,Number(data.sample_interval_ms)||2000),sensorPollMs=Math.max(1,Number(data.sensor_poll_interval_ms)||19),historyMs=Math.max(10,Number(data.history_interval_ms)||1000),secondsCap=Math.max(30,Number(data.history_seconds_capacity||data.history_capacity)||600),archiveCap=Math.max(60,Number(data.history_minutes_capacity)||600),archiveIntervalMs=Math.max(1000,Number(data.history_minutes_interval_ms)||10000),rawChartPts=Number(data.chart_point_limit)||120,inaAvg=Math.max(1,Number(data.ina_averaging_samples)||1),inaBusUs=Math.max(140,Number(data.ina_bus_conv_us)||140),inaShuntUs=Math.max(140,Number(data.ina_shunt_conv_us)||140),theoryHz=Number(data.ina_estimated_channel_hz)||0,measuredHz=Number(data.sensor_measured_hz)||0,rawEspCapacity=Math.max(1,Number(data.raw_history_capacity)||2048),rawFetchLimit=Math.max(32,Number(data.raw_history_fetch_limit)||256),regHex=data.ina_config_register_hex||'0x7007',profileId=data.sampling_profile_id||'custom',profileLabel=data.sampling_profile_label||'Custom',profileSummary=data.sampling_profile_summary||'Mode custom aktif.',profileSafe=!!data.sampling_profile_safe,presetTargetHz=Math.max(0,Number(data.sampling_profile_target_hz)||0);historyCapacityMax=Math.max(secondsCap,rawEspCapacity,archiveCap,2000);const chartPts=clampChartPoints(rawChartPts);if(document.activeElement!==document.getElementById('cfg-sensor-poll'))document.getElementById('cfg-sensor-poll').value=sensorPollMs;if(document.activeElement!==document.getElementById('cfg-interval'))document.getElementById('cfg-interval').value=reportMs;if(document.activeElement!==document.getElementById('cfg-history-interval'))document.getElementById('cfg-history-interval').value=historyMs;if(document.activeElement!==document.getElementById('cfg-chart-points'))document.getElementById('cfg-chart-points').value=chartPts;document.getElementById('cfg-ina-avg').value=String(inaAvg);document.getElementById('cfg-ina-bus-us').value=String(inaBusUs);document.getElementById('cfg-ina-shunt-us').value=String(inaShuntUs);runtimeReportMs=reportMs;runtimeSensorPollMs=sensorPollMs;runtimeRawEspCapacity=rawEspCapacity;runtimeRawFetchLimit=rawFetchLimit;runtimeArchiveEspCapacity=archiveCap;runtimeArchiveIntervalMs=archiveIntervalMs;runtimeMeasuredHz=measuredHz;runtimeInaAvg=inaAvg;maxPts=chartPts;setRawPollMs(computeRawPollMs());document.getElementById('sampling-profile-line').textContent='Mode: '+profileLabel+(profileId!=='custom'&&presetTargetHz>0?(' | target ~'+presetTargetHz+' Hz'):'');document.getElementById('sampling-profile-note').textContent=profileSummary+(profileSafe?' | beginner friendly':' | advanced custom');document.getElementById('sampling-runtime-brief').textContent='Sensor poll '+sensorPollMs+' ms | Report '+reportMs+' ms | History '+historyMs+' ms | Trend chart '+chartPts+' pts';document.getElementById('interval-note').textContent='Raw fetch '+rawPollMs+' ms / '+effectiveRawFetchLimit()+' pts | ESP raw '+rawEspCapacity+' pts | Raw 10m '+formatHistorySpan(RAW_HISTORY_KEEP_MS)+' | Raw 100m '+formatHistorySpan(ARCHIVE_RAW_KEEP_MS);document.getElementById('runtime-ina-note').textContent='INA '+regHex+' | avg x'+inaAvg+' | bus '+inaBusUs+' us | shunt '+inaShuntUs+' us | theory '+(theoryHz?theoryHz.toFixed(1):'0.0')+' Hz | measured '+(measuredHz?measuredHz.toFixed(1):'0.0')+' Hz';setSamplingPresetButtons(profileId);renderHistoryFromBrowser()}
     function maybeFetchMinuteHistory(force){const scale=activeHistoryScale();if(scale.id!=='10min')return;if(rawBrowserHistorySpanMs()>=scale.windowMs||archiveRawSpanMs()>=scale.windowMs)return;fetchArchiveHistory(force)}
     function markFlowFormDirty(){flowFormDirty=true;document.getElementById('save-flow').textContent='Save Flow Thresholds *';document.getElementById('flow-edit-note').textContent='Unsaved flow threshold changes pending.'}
     function clearFlowFormDirty(msg){flowFormDirty=false;flowFormSaving=false;document.getElementById('save-flow').textContent='Save Flow Thresholds';document.getElementById('flow-edit-note').textContent=msg||'Changes save only after pressing the button.'}
@@ -1005,7 +1040,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     }
     async function saveWifiConfig(){const button=document.getElementById('save-wifi');button.textContent='Saving Wi-Fi...';const body=new URLSearchParams();body.set('wifi_ssid',document.getElementById('wifi-ssid').value);const pass=document.getElementById('wifi-pass').value;if(pass)body.set('wifi_pass',pass);try{const r=await fetch('/api/config/wifi',{method:'POST',body});const d=await r.json();if(!r.ok){alert(d.error||'Wi-Fi update failed');return}document.getElementById('wifi-pass').value='';document.getElementById('wifi-note').textContent=(d.message||'Wi-Fi saved, reboot scheduled')+' | Tunggu device reconnect';alert(d.message||'Wi-Fi saved, reboot scheduled');setTimeout(()=>{fetchConfig();fetchData()},4500)}catch(e){alert('Wi-Fi update failed')}finally{button.textContent='Save Wi-Fi & Reboot'}}
     async function saveDeviceConfig(){const body=new URLSearchParams();body.set('device_id',document.getElementById('cfg-device').value);body.set('line_id',document.getElementById('cfg-line').value);const r=await fetch('/api/config/device',{method:'POST',body});const d=await r.json();alert(d.message||'Saved');fetchConfig();fetchData()}
-    async function saveRuntimeConfig(){const body=new URLSearchParams();body.set('sample_interval_ms',document.getElementById('cfg-interval').value);body.set('sensor_poll_interval_ms',document.getElementById('cfg-sensor-poll').value);body.set('history_interval_ms',document.getElementById('cfg-history-interval').value);body.set('chart_point_limit',document.getElementById('cfg-chart-points').value);body.set('ina_averaging_samples',document.getElementById('cfg-ina-avg').value);body.set('ina_bus_conv_us',document.getElementById('cfg-ina-bus-us').value);body.set('ina_shunt_conv_us',document.getElementById('cfg-ina-shunt-us').value);const r=await fetch('/api/config/runtime',{method:'POST',body});const d=await r.json();if(!r.ok){alert(d.error||'Runtime update failed');return}renderRuntimeConfig(d);alert(d.message||'Runtime updated');fetchConfig();fetchData()}
+    async function applySamplingProfile(profileId){document.getElementById('sampling-profile-note').textContent='Applying sampling preset...';const body=new URLSearchParams();body.set('sampling_profile_id',profileId);try{const r=await fetch('/api/config/runtime',{method:'POST',body});const d=await r.json();if(!r.ok){alert(d.error||'Sampling preset update failed');fetchConfig();fetchData();return}renderRuntimeConfig(d);alert(d.message||'Sampling preset applied');fetchConfig();fetchData()}catch(e){alert('Sampling preset update failed');fetchConfig();fetchData()}}
+    async function saveRuntimeConfig(){const body=new URLSearchParams();body.set('sample_interval_ms',document.getElementById('cfg-interval').value);body.set('sensor_poll_interval_ms',document.getElementById('cfg-sensor-poll').value);body.set('history_interval_ms',document.getElementById('cfg-history-interval').value);body.set('chart_point_limit',document.getElementById('cfg-chart-points').value);body.set('ina_averaging_samples',document.getElementById('cfg-ina-avg').value);body.set('ina_bus_conv_us',document.getElementById('cfg-ina-bus-us').value);body.set('ina_shunt_conv_us',document.getElementById('cfg-ina-shunt-us').value);const r=await fetch('/api/config/runtime',{method:'POST',body});const d=await r.json();if(!r.ok){alert(d.error||'Runtime update failed');return}renderRuntimeConfig(d);alert(d.message||'Advanced sampling updated');fetchConfig();fetchData()}
     async function saveInaConfig(channel){const body=new URLSearchParams();if(channel==='solar')body.set('solar_shunt_milliohms',document.getElementById('solar-shunt-mo').value);if(channel==='battery')body.set('battery_shunt_milliohms',document.getElementById('bat-shunt-mo').value);if(channel==='load')body.set('load_shunt_milliohms',document.getElementById('load-shunt-mo').value);const r=await fetch('/api/config/ina',{method:'POST',body});const d=await r.json();if(!r.ok){alert(d.error||'INA config update failed');return}renderInaConfig(d,true);alert(d.message||'INA config updated');fetchData()}
     async function saveFlowConfig(){flowFormSaving=true;document.getElementById('save-flow').textContent='Saving Flow Thresholds...';const body=new URLSearchParams();body.set('solar_active_threshold_mw',document.getElementById('flow-solar-threshold').value);body.set('load_active_threshold_mw',document.getElementById('flow-load-threshold').value);body.set('battery_flow_threshold_mw',document.getElementById('flow-battery-threshold').value);const r=await fetch('/api/config/flow',{method:'POST',body});const d=await r.json();if(!r.ok){flowFormSaving=false;document.getElementById('save-flow').textContent='Save Flow Thresholds *';alert(d.error||'Flow threshold update failed');return}clearFlowFormDirty(d.message||'Flow thresholds updated');alert(d.message||'Flow thresholds updated');fetchConfig();fetchData()}
     function buildLedPwmBody(){const body=new URLSearchParams(),flash=syncLedFlashInputs();if(document.getElementById('led-pwm-enable').checked)body.set('led_pwm_enabled','1');if(document.getElementById('led-pwm-flash-enable').checked)body.set('led_pwm_flash_enabled','1');if(document.getElementById('led-pwm-invert').checked)body.set('led_pwm_inverted','1');body.set('led_pwm_frequency_hz',document.getElementById('led-pwm-freq').value);body.set('led_pwm_duty_percent',document.getElementById('led-pwm-duty-num').value);body.set('led_pwm_flash_on_ms',flash.onMs);body.set('led_pwm_flash_period_ms',flash.periodMs);return body}
@@ -1029,6 +1065,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
       setInterval(()=>{document.getElementById('last-upd').textContent=((Date.now()-lastUpdate)/1000).toFixed(1)+'s ago'},500);
       document.getElementById('save-wifi').onclick=saveWifiConfig;
       document.getElementById('save-device').onclick=saveDeviceConfig;
+      document.getElementById('apply-sampling-safe-53').onclick=()=>applySamplingProfile('stable_53hz');
+      document.getElementById('apply-sampling-safe-100').onclick=()=>applySamplingProfile('stable_100hz');
       document.getElementById('apply-interval').onclick=saveRuntimeConfig;
       document.getElementById('save-solar-shunt').onclick=()=>saveInaConfig('solar');
       document.getElementById('save-bat-shunt').onclick=()=>saveInaConfig('battery');
@@ -1644,6 +1682,18 @@ void WebUi::handleSaveServer_() {
 
 void WebUi::handleSaveRuntime_() {
   const DeviceConfig& currentConfig = wifiService_.config();
+  const String requestedProfileId = server_.arg("sampling_profile_id");
+  const SamplingProfilePreset* requestedProfile =
+      requestedProfileId.isEmpty() ? nullptr : findSamplingProfilePreset(requestedProfileId);
+  if (!requestedProfileId.isEmpty() && requestedProfile == nullptr) {
+    DynamicJsonDocument errorDoc(256);
+    errorDoc["ok"] = false;
+    errorDoc["error"] = "Unknown sampling profile";
+    String errorBody;
+    serializeJson(errorDoc, errorBody);
+    server_.send(400, "application/json", errorBody);
+    return;
+  }
   uint32_t requestedReportInterval = server_.arg("sample_interval_ms").isEmpty()
                                          ? currentConfig.sampleIntervalMs
                                          : server_.arg("sample_interval_ms").toInt();
@@ -1665,6 +1715,16 @@ void WebUi::handleSaveRuntime_() {
   uint32_t requestedInaShuntConvUs = server_.arg("ina_shunt_conv_us").isEmpty()
                                          ? currentConfig.inaShuntConvTimeUs
                                          : server_.arg("ina_shunt_conv_us").toInt();
+
+  if (requestedProfile != nullptr) {
+    requestedReportInterval = requestedProfile->sampleIntervalMs;
+    requestedSensorPollInterval = requestedProfile->sensorPollIntervalMs;
+    requestedHistoryInterval = requestedProfile->historyIntervalMs;
+    requestedChartPointLimit = requestedProfile->chartPointLimit;
+    requestedInaAverage = requestedProfile->inaAveragingSamples;
+    requestedInaBusConvUs = requestedProfile->inaBusConvTimeUs;
+    requestedInaShuntConvUs = requestedProfile->inaShuntConvTimeUs;
+  }
 
   if (requestedReportInterval == 0U) {
     requestedReportInterval = Config::kDefaultSampleIntervalMs;
@@ -1701,7 +1761,9 @@ void WebUi::handleSaveRuntime_() {
 
   DynamicJsonDocument doc(2048);
   doc["ok"] = true;
-  doc["message"] = "Runtime sampling applied";
+  doc["message"] = requestedProfile != nullptr
+                       ? String("Sampling preset applied: ") + requestedProfile->label
+                       : "Advanced runtime sampling applied";
   JsonObject root = doc.as<JsonObject>();
   root["sample_interval_ms"] = wifiService_.config().sampleIntervalMs;
   appendRuntimeConfig(
