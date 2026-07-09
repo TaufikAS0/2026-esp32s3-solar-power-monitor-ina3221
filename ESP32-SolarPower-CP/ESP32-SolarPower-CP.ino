@@ -190,6 +190,14 @@ void loop() {
   updateBackendCapture(nowMs);
   gOtaService.update();
   gWebUi.update();
-  gSerialReporter.update(nowMs, gWifiService, gInaSensors.solar(), gInaSensors.battery(), gCurrentState);
+  if (gSerialReporter.shouldReport(nowMs)) {
+    const BackendSenderRuntime backendRuntime = gBackendSender.runtimeSnapshot();
+    gSerialReporter.update(nowMs,
+                           gWifiService,
+                           backendRuntime,
+                           gInaSensors.solar(),
+                           gInaSensors.battery(),
+                           gCurrentState);
+  }
   gBackendSender.update(nowMs);
 }

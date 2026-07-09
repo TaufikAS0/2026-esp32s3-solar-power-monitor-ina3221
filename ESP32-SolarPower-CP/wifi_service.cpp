@@ -12,6 +12,7 @@ void WifiService::begin() {
   loadConfig_();
   runtime_ = WifiRuntime{};
   lastWifiStatus_ = 0U;
+  WiFi.onEvent([this](WiFiEvent_t event, WiFiEventInfo_t info) { handleWifiEvent_(event, info); });
 
   if (config_.wifiSsid.isEmpty()) {
     config_.wifiSsid = Config::kDefaultWifiSsid;
@@ -47,11 +48,6 @@ void WifiService::update(uint32_t nowMs) {
       }
       lastWifiStatus_ = wifiStatus;
       return;
-    }
-
-    if (lastWifiStatus_ == static_cast<uint8_t>(WL_CONNECTED)) {
-      ++runtime_.staDisconnectCount;
-      runtime_.lastStaDisconnectMs = nowMs;
     }
   }
 
@@ -94,6 +90,18 @@ const DeviceConfig& WifiService::config() const {
 
 const WifiRuntime& WifiService::runtime() const {
   return runtime_;
+}
+
+const char* WifiService::lastWifiEventName() const {
+  return WiFi.eventName(static_cast<arduino_event_id_t>(runtime_.lastWifiEventId));
+}
+
+const char* WifiService::lastStaDisconnectReasonName() const {
+  if (runtime_.lastStaDisconnectReason == 0U) {
+    return "NONE";
+  }
+  return WiFi.disconnectReasonName(
+      static_cast<wifi_err_reason_t>(runtime_.lastStaDisconnectReason));
 }
 
 String WifiService::ipAddress() const {
@@ -429,6 +437,55 @@ void WifiService::saveFloat_(const char* key, float value) {
   preferences_.putFloat(key, value);
 }
 
+void WifiService::handleWifiEvent_(WiFiEvent_t event, WiFiEventInfo_t info) {
+  const uint32_t nowMs = millis();
+  runtime_.lastWifiEventId = static_cast<uint32_t>(event);
+  runtime_.lastWifiEventMs = nowMs;
+
+  switch (event) {
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP: {
+      runtime_.staConnectedOnce = true;
+      runtime_.lastStaConnectMs = nowMs;
+      runtime_.lastStaGotIpMs = nowMs;
+      const String ipText = IPAddress(info.got_ip.ip_info.ip.addr).toString();
+      Serial.printf("[WiFi-event][%lu] %s ip=%s rssi=%d\n",
+                    static_cast<unsigned long>(nowMs),
+                    lastWifiEventName(),
+                    ipText.c_str(),
+                    WiFi.RSSI());
+      break;
+    }
+
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      ++runtime_.staDisconnectCount;
+      runtime_.lastStaDisconnectMs = nowMs;
+      runtime_.lastStaDisconnectReason = info.wifi_sta_disconnected.reason;
+      runtime_.lastStaDisconnectRssi = info.wifi_sta_disconnected.rssi;
+      Serial.printf("[WiFi-event][%lu] %s reason=%u(%s) rssi=%d status=%d\n",
+                    static_cast<unsigned long>(nowMs),
+                    lastWifiEventName(),
+                    static_cast<unsigned int>(runtime_.lastStaDisconnectReason),
+                    lastStaDisconnectReasonName(),
+                    static_cast<int>(runtime_.lastStaDisconnectRssi),
+                    static_cast<int>(WiFi.status()));
+      break;
+
+    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+    case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+    case ARDUINO_EVENT_WIFI_STA_START:
+    case ARDUINO_EVENT_WIFI_STA_STOP:
+    case ARDUINO_EVENT_WIFI_AP_START:
+    case ARDUINO_EVENT_WIFI_AP_STOP:
+      Serial.printf("[WiFi-event][%lu] %s\n",
+                    static_cast<unsigned long>(nowMs),
+                    lastWifiEventName());
+      break;
+
+    default:
+      break;
+  }
+}
+
 void WifiService::startStation_() {
   apMode_ = false;
   accessPointSsid_ = "";
@@ -439,6 +496,9 @@ void WifiService::startStation_() {
   WiFi.persistent(false);
   WiFi.begin(config_.wifiSsid.c_str(), config_.wifiPass.c_str());
   wifiConnectStartedMs_ = millis();
+  Serial.printf("[WiFi][%lu] start sta ssid=%s\n",
+                static_cast<unsigned long>(wifiConnectStartedMs_),
+                config_.wifiSsid.c_str());
 }
 
 void WifiService::startAccessPoint_() {
@@ -448,6 +508,9 @@ void WifiService::startAccessPoint_() {
   WiFi.disconnect(true, true);
   WiFi.mode(WIFI_AP);
   WiFi.softAP(accessPointSsid_.c_str());
+  Serial.printf("[WiFi][%lu] fallback ap ssid=%s\n",
+                static_cast<unsigned long>(millis()),
+                accessPointSsid_.c_str());
 }
 
 String WifiService::buildDefaultDeviceId_() const {

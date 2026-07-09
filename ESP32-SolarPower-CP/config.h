@@ -69,11 +69,11 @@ constexpr uint16_t kArduinoOtaPort = 3232;
 
 constexpr size_t kHistoryCapacity = 600;
 constexpr size_t kRawHistoryCapacity = 2048;
-constexpr uint32_t kRawHistoryFetchLimit = 256;
+constexpr uint32_t kRawHistoryFetchLimit = 128;
 constexpr size_t kBackendQueueCapacity = 32;
-constexpr size_t kBackendBatchMaxSamples = 8;
+constexpr size_t kBackendBatchMaxSamples = 4;
 
-constexpr uint32_t kBackendTelemetryAttemptMs = 5000;
+constexpr uint32_t kBackendTelemetryAttemptMs = 3000;
 constexpr uint32_t kBackendHeartbeatIntervalMs = 15000;
 constexpr uint32_t kBackendConnectTimeoutMs = 350;
 constexpr uint32_t kBackendResponseTimeoutMs = 650;

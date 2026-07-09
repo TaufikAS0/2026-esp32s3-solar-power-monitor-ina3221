@@ -1,6 +1,7 @@
 #include "web_ui.h"
 
 #include <ArduinoJson.h>
+#include <esp_system.h>
 #include <math.h>
 
 #include "battery_profile.h"
@@ -44,13 +45,66 @@ void appendBackendSenderStatus(JsonObject object, const BackendSenderRuntime& ru
   object["backend_next_retry_in_ms"] = runtime.nextRetryInMs;
 }
 
-void appendWifiRuntimeStatus(JsonObject object, const WifiRuntime& runtime) {
+const char* resetReasonName(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_UNKNOWN:
+      return "UNKNOWN";
+    case ESP_RST_POWERON:
+      return "POWERON";
+    case ESP_RST_EXT:
+      return "EXT_PIN";
+    case ESP_RST_SW:
+      return "SOFTWARE";
+    case ESP_RST_PANIC:
+      return "PANIC";
+    case ESP_RST_INT_WDT:
+      return "INT_WDT";
+    case ESP_RST_TASK_WDT:
+      return "TASK_WDT";
+    case ESP_RST_WDT:
+      return "OTHER_WDT";
+    case ESP_RST_DEEPSLEEP:
+      return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT:
+      return "BROWNOUT";
+    case ESP_RST_SDIO:
+      return "SDIO";
+    case ESP_RST_USB:
+      return "USB";
+    case ESP_RST_JTAG:
+      return "JTAG";
+    case ESP_RST_EFUSE:
+      return "EFUSE";
+    case ESP_RST_PWR_GLITCH:
+      return "POWER_GLITCH";
+    case ESP_RST_CPU_LOCKUP:
+      return "CPU_LOCKUP";
+    default:
+      return "OTHER";
+  }
+}
+
+void appendResetReason(JsonObject object) {
+  const esp_reset_reason_t reason = esp_reset_reason();
+  object["reset_reason_code"] = static_cast<uint32_t>(reason);
+  object["reset_reason"] = resetReasonName(reason);
+}
+
+void appendWifiRuntimeStatus(JsonObject object, const WifiService& wifiService) {
+  const WifiRuntime& runtime = wifiService.runtime();
   object["wifi_sta_connected_once"] = runtime.staConnectedOnce;
   object["wifi_disconnect_count"] = runtime.staDisconnectCount;
   object["wifi_reconnect_attempts"] = runtime.staReconnectAttempts;
   object["wifi_last_connect_ms"] = runtime.lastStaConnectMs;
   object["wifi_last_disconnect_ms"] = runtime.lastStaDisconnectMs;
   object["wifi_last_reconnect_attempt_ms"] = runtime.lastStaReconnectAttemptMs;
+  object["wifi_last_event_id"] = runtime.lastWifiEventId;
+  object["wifi_last_event_name"] = wifiService.lastWifiEventName();
+  object["wifi_last_event_ms"] = runtime.lastWifiEventMs;
+  object["wifi_last_got_ip_ms"] = runtime.lastStaGotIpMs;
+  object["wifi_last_disconnect_reason"] = runtime.lastStaDisconnectReason;
+  object["wifi_last_disconnect_reason_name"] = wifiService.lastStaDisconnectReasonName();
+  object["wifi_last_disconnect_rssi"] = runtime.lastStaDisconnectRssi;
 }
 
 void appendFlowThresholdConfig(JsonObject object, const DeviceConfig& config) {
@@ -744,8 +798,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
   </div>
 
   <script>
-    let maxPts=300,chartReady=false,lastUpdate=Date.now(),pollMs=1000,pollTimer=null,rawPollMs=250,rawPollTimer=null,rawFetchBusy=false,archiveFetchBusy=false,archiveLastFetchMs=0,rawCursorSeq=0,batteryPresets=[],serverFormDirty=false,serverFormSaving=false,flowFormDirty=false,flowFormSaving=false,ledFormDirty=false,ledFormSaving=false,ledLiveTimer=null,ledSaveTimer=null,historyScale='1s',historyCapacityMax=600,runtimeReportMs=1000,runtimeSensorPollMs=1,runtimeRawEspCapacity=2048,runtimeRawFetchLimit=256,runtimeArchiveEspCapacity=600,runtimeArchiveIntervalMs=10000,runtimeMeasuredHz=0,runtimeInaAvg=1,viewFollowLive=true,viewStartMs=0,viewEndMs=0,yAxisLocked=false;
-    const charts={},trendHistory=[],archiveHistory=[],rawHistory=[],SOLAR='#f59e0b',BAT='#10b981',BAT_DIS='#ef4444',COMBO='#a855f7',MUTED='#4a6080',WARN='#ef4444',LOAD='#38bdf8',TREND_HISTORY_LIMIT=3600,RAW_HISTORY_KEEP_MS=600000,HISTORY_SCALE_KEY='solarMonitorHistoryScaleV1',HISTORY_SCALES={s1:{id:'1s',label:'1s',gridMs:1000,windowMs:10000,source:'raw'},s3:{id:'3s',label:'3s',gridMs:3000,windowMs:30000,source:'raw'},s10:{id:'10s',label:'10s',gridMs:10000,windowMs:100000,source:'raw'},m1:{id:'1min',label:'1min',gridMs:60000,windowMs:600000,source:'raw'},m10:{id:'10min',label:'10min',gridMs:600000,windowMs:6000000,source:'archive'}},yAxisRanges={power:null,voltage:null,current:null},lastRendered={points:[],viewStartMs:0,viewEndMs:0,sourceMode:'raw-live',scaleId:'1s'},zoomSelection={active:false,chartId:'',startPx:0,endPx:0};
+    let maxPts=300,chartReady=false,lastUpdate=Date.now(),pollMs=1000,pollTimer=null,rawPollMs=250,rawPollTimer=null,rawFetchBusy=false,archiveFetchBusy=false,archiveLastFetchMs=0,rawCursorSeq=0,batteryPresets=[],serverFormDirty=false,serverFormSaving=false,flowFormDirty=false,flowFormSaving=false,ledFormDirty=false,ledFormSaving=false,ledLiveTimer=null,ledSaveTimer=null,historyScale='1s',historyCapacityMax=600,runtimeReportMs=1000,runtimeSensorPollMs=1,runtimeRawEspCapacity=2048,runtimeRawFetchLimit=256,runtimeArchiveEspCapacity=600,runtimeArchiveIntervalMs=10000,runtimeMeasuredHz=0,runtimeInaAvg=1,viewFollowLive=true,viewStartMs=0,viewEndMs=0,yAxisLocked=false,archiveRawBucket=null;
+    const charts={},trendHistory=[],archiveHistory=[],rawHistory=[],SOLAR='#f59e0b',BAT='#10b981',BAT_DIS='#ef4444',COMBO='#a855f7',MUTED='#4a6080',WARN='#ef4444',LOAD='#38bdf8',TREND_HISTORY_LIMIT=3600,RAW_HISTORY_KEEP_MS=600000,ARCHIVE_RAW_KEEP_MS=6000000,ARCHIVE_RAW_BUCKET_MS=1000,HISTORY_SCALE_KEY='solarMonitorHistoryScaleV1',HISTORY_SCALES={s1:{id:'1s',label:'1s',gridMs:1000,windowMs:10000,source:'raw'},s3:{id:'3s',label:'3s',gridMs:3000,windowMs:30000,source:'raw'},s10:{id:'10s',label:'10s',gridMs:10000,windowMs:100000,source:'raw'},m1:{id:'1min',label:'1min',gridMs:60000,windowMs:600000,source:'raw'},m10:{id:'10min',label:'10min',gridMs:600000,windowMs:6000000,source:'archive'}},yAxisRanges={power:null,voltage:null,current:null},lastRendered={points:[],viewStartMs:0,viewEndMs:0,sourceMode:'raw-live',scaleId:'1s'},zoomSelection={active:false,chartId:'',startPx:0,endPx:0};
     function pad2(v){v=Math.max(0,Math.floor(Number(v)||0));return String(v).padStart(2,'0')}
     function pad3(v){v=Math.max(0,Math.floor(Number(v)||0));return String(v).padStart(3,'0')}
     function formatClockMs(ms){const d=new Date(Number(ms)||Date.now());return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds())+'.'+pad3(d.getMilliseconds())}
@@ -758,13 +812,14 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function formatHistorySpan(ms){ms=Math.max(0,Number(ms)||0);if(ms>=60000)return(ms/60000).toFixed(ms>=600000?1:2)+' min';if(ms>=1000)return(ms/1000).toFixed(ms>=10000?0:1)+' s';return Math.round(ms)+' ms'}
     function activeHistoryScale(){if(historyScale==='3s')return HISTORY_SCALES.s3;if(historyScale==='10s')return HISTORY_SCALES.s10;if(historyScale==='1min')return HISTORY_SCALES.m1;if(historyScale==='10min')return HISTORY_SCALES.m10;return HISTORY_SCALES.s1}
     function rawBrowserHistorySpanMs(){return rawHistory.length>1?Math.max(0,(Number(rawHistory[rawHistory.length-1].t)||0)-(Number(rawHistory[0].t)||0)):0}
+    function archiveRawSpanMs(){return archiveHistory.length>1?Math.max(0,(Number(archiveHistory[archiveHistory.length-1].t)||0)-(Number(archiveHistory[0].t)||0)):0}
     function sourceUsesRaw(mode){return mode==='raw-live'||mode==='raw-cache'}
     function visibleWindowPointEstimate(scale,mode){if(sourceUsesRaw(mode)||(!mode&&scale.source==='raw')){const hz=runtimeMeasuredHz>0?runtimeMeasuredHz:(1000/Math.max(1,runtimeSensorPollMs));return Math.max(1,Math.round(scale.windowMs*hz/1000))}const archiveIntervalMs=(mode==='archive-cache'||(!mode&&scale.source==='archive'))?runtimeArchiveIntervalMs:runtimeReportMs;return Math.max(1,Math.round(scale.windowMs/Math.max(1,archiveIntervalMs)))}
     function saveHistoryScale(){try{localStorage.setItem(HISTORY_SCALE_KEY,historyScale)}catch(e){}}
     function loadHistoryScale(){try{const stored=localStorage.getItem(HISTORY_SCALE_KEY);if(stored==='1s'||stored==='3s'||stored==='10s'||stored==='1min'||stored==='10min')historyScale=stored}catch(e){}}
     function lowerBoundByTime(points,targetMs){let lo=0,hi=points.length;while(lo<hi){const mid=(lo+hi)>>1;if((Number(points[mid].t)||0)<targetMs)lo=mid+1;else hi=mid}return lo}
     function pruneTimedHistory(list,minTimestampMs){const cut=lowerBoundByTime(list,minTimestampMs);if(cut>0)list.splice(0,cut)}
-    function clearBrowserHistory(){trendHistory.length=0;archiveHistory.length=0;rawHistory.length=0;rawCursorSeq=0;archiveLastFetchMs=0;viewFollowLive=true;viewStartMs=0;viewEndMs=0;renderHistoryFromBrowser('Browser RAM cleared. Waiting for new live samples...')}
+    function clearBrowserHistory(){trendHistory.length=0;archiveHistory.length=0;rawHistory.length=0;rawCursorSeq=0;archiveLastFetchMs=0;archiveRawBucket=null;viewFollowLive=true;viewStartMs=0;viewEndMs=0;renderHistoryFromBrowser('Browser RAM cleared. Waiting for new live samples...')}
     function updateLiveLogsButton(){const button=document.getElementById('history-live-logs');if(!button)return;button.classList.toggle('active',viewFollowLive);button.textContent=viewFollowLive?'Live Logs ON':'Live Logs'}
     function activateLiveLogs(note){viewFollowLive=true;viewStartMs=0;viewEndMs=0;renderHistoryFromBrowser(note||'Live logs mode enabled.')}
     function resetHistoryZoom(note){activateLiveLogs(note||'Zoom reset to live logs.')}
@@ -777,25 +832,26 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function moveChartSelection(ev){if(!zoomSelection.active||zoomSelection.chartId!==ev.currentTarget.id)return;zoomSelection.endPx=canvasPixelX(ev);const chart=chartByCanvasId(zoomSelection.chartId);if(chart)chart.draw()}
     function endChartSelection(){if(!zoomSelection.active)return;const chartId=zoomSelection.chartId,chart=chartByCanvasId(chartId),left=Math.min(zoomSelection.startPx,zoomSelection.endPx),right=Math.max(zoomSelection.startPx,zoomSelection.endPx);zoomSelection.active=false;zoomSelection.chartId='';if(chart)chart.draw();if(!chart||right-left<10||!lastRendered.viewEndMs)return;const xScale=chart.scales.x,relStart=xScale.getValueForPixel(left),relEnd=xScale.getValueForPixel(right),startMs=lastRendered.viewEndMs+Math.min(relStart,relEnd)*1000,endMs=lastRendered.viewEndMs+Math.max(relStart,relEnd)*1000;if(!Number.isFinite(startMs)||!Number.isFinite(endMs)||endMs-startMs<50)return;viewFollowLive=false;viewStartMs=startMs;viewEndMs=endMs;renderHistoryFromBrowser('Zoom '+formatHistorySpan(endMs-startMs)+' selected.')}
     function installChartInteractions(){['powerChart','voltageChart','currentChart'].forEach(id=>{const canvas=document.getElementById(id);if(!canvas||canvas.dataset.zoomReady==='1')return;canvas.dataset.zoomReady='1';canvas.addEventListener('mousedown',beginChartSelection);canvas.addEventListener('mousemove',moveChartSelection);canvas.addEventListener('dblclick',()=>activateLiveLogs('Live logs restored from chart double-click.'))});if(!window.__solarChartSelectionHooked){window.__solarChartSelectionHooked=true;window.addEventListener('mouseup',endChartSelection)}}
-    function sourceModeLabel(mode){if(mode==='raw-live')return'live burst';if(mode==='raw-cache')return'browser raw cache';if(mode==='archive-cache')return'device archive 10s buckets';return'browser archive'}
+    function sourceModeLabel(mode){if(mode==='raw-live')return'live burst';if(mode==='raw-cache')return'browser raw cache';if(mode==='archive-cache')return'browser 100m raw fifo';return'browser cached history'}
     function rawSourceCovers(startMs,endMs){return rawHistory.length&&Number(rawHistory[0].t)<=startMs&&Number(rawHistory[rawHistory.length-1].t)>=endMs}
     function normalizeArchivePoint(item){return{t:Number(item&&item.timestamp_ms)||Date.now(),ps:Number(item&&item.p_solar_mw)||0,pb:Number(item&&item.p_bat_signed_mw!=null?item.p_bat_signed_mw:item&&item.p_bat_mw)||0,pl:Number(item&&item.p_load_mw)||0,vs:Number(item&&item.v_solar_v)||0,vb:Number(item&&item.v_bat_v)||0,vl:Number(item&&item.v_load_v)||0,is:Number(item&&item.i_solar_ma)||0,ib:Number(item&&item.i_bat_ma)||0,il:Number(item&&item.i_load_ma)||0}}
-    function chooseHistorySource(scale,startMs,endMs){if(scale.source==='archive'){if(startMs>0&&endMs>startMs&&rawSourceCovers(startMs,endMs))return{points:rawHistory,mode:viewFollowLive?'raw-live':'raw-cache'};if(archiveHistory.length)return{points:archiveHistory,mode:'archive-cache'};if(trendHistory.length)return{points:trendHistory,mode:'trend-archive'};if(rawHistory.length)return{points:rawHistory,mode:'raw-cache'};return{points:[],mode:'archive-cache'}}if(startMs===0&&endMs===0)return rawHistory.length?{points:rawHistory,mode:'raw-live'}:(trendHistory.length?{points:trendHistory,mode:'trend-archive'}:(archiveHistory.length?{points:archiveHistory,mode:'archive-cache'}:{points:[],mode:'raw-live'}));if(rawSourceCovers(startMs,endMs))return{points:rawHistory,mode:viewFollowLive?'raw-live':'raw-cache'};if(trendHistory.length)return{points:trendHistory,mode:'trend-archive'};if(archiveHistory.length)return{points:archiveHistory,mode:'archive-cache'};return rawHistory.length?{points:rawHistory,mode:'raw-cache'}:{points:[],mode:'raw-live'}}
+    function chooseHistorySource(scale,startMs,endMs){if(scale.source==='archive'){if(startMs>0&&endMs>startMs&&rawSourceCovers(startMs,endMs))return{points:rawHistory,mode:viewFollowLive?'raw-live':'raw-cache'};if(archiveHistory.length)return{points:archiveHistory,mode:'archive-cache'};if(rawHistory.length)return{points:rawHistory,mode:'raw-cache'};if(trendHistory.length)return{points:trendHistory,mode:'trend-archive'};return{points:[],mode:'archive-cache'}}if(startMs===0&&endMs===0)return rawHistory.length?{points:rawHistory,mode:'raw-live'}:(trendHistory.length?{points:trendHistory,mode:'trend-archive'}:(archiveHistory.length?{points:archiveHistory,mode:'archive-cache'}:{points:[],mode:'raw-live'}));if(rawSourceCovers(startMs,endMs))return{points:rawHistory,mode:viewFollowLive?'raw-live':'raw-cache'};if(trendHistory.length)return{points:trendHistory,mode:'trend-archive'};if(archiveHistory.length)return{points:archiveHistory,mode:'archive-cache'};return rawHistory.length?{points:rawHistory,mode:'raw-cache'}:{points:[],mode:'raw-live'}}
     function effectiveViewRange(scale,source){if(!source.length){const now=Date.now();return{startMs:now-scale.windowMs,endMs:now}}const sourceStart=Number(source[0].t)||Date.now(),sourceEnd=Number(source[source.length-1].t)||sourceStart;if(viewFollowLive){let endMs=sourceEnd,startMs=endMs-scale.windowMs;if(startMs<sourceStart)startMs=sourceStart;return{startMs:startMs,endMs:endMs}}let startMs=viewStartMs,endMs=viewEndMs;if(!(endMs>startMs)){endMs=Math.max(sourceEnd,sourceStart+scale.windowMs);startMs=endMs-scale.windowMs}const spanMs=Math.max(1,endMs-startMs);if(startMs<sourceStart){startMs=sourceStart;endMs=startMs+spanMs}if(endMs>sourceEnd){endMs=sourceEnd;startMs=endMs-spanMs}if(startMs<sourceStart)startMs=sourceStart;if(endMs<=startMs)endMs=Math.max(sourceEnd,startMs+1);return{startMs:startMs,endMs:endMs}}
     function calcYRange(points,keys){let min=Infinity,max=-Infinity;points.forEach(point=>keys.forEach(key=>{const value=Number(point[key]);if(Number.isFinite(value)){if(value<min)min=value;if(value>max)max=value}}));if(!Number.isFinite(min)||!Number.isFinite(max))return null;if(Math.abs(max-min)<0.0001){const pad=Math.max(1,Math.abs(max)*0.1);min-=pad;max+=pad}else{const pad=(max-min)*0.08;min-=pad;max+=pad}if(min>0&&max>0)min=Math.max(0,min);return{min:min,max:max}}
     function captureYAxisLocks(){if(!lastRendered.points.length)return;yAxisRanges.power=calcYRange(lastRendered.points,['ps','pb','pl']);yAxisRanges.voltage=calcYRange(lastRendered.points,['vs','vb','vl']);yAxisRanges.current=calcYRange(lastRendered.points,['is','ib','il'])}
     function updateYAxisLockButton(){const button=document.getElementById('history-lock-y');if(!button)return;button.classList.toggle('active',yAxisLocked);button.textContent=yAxisLocked?'Unlock Y-Axis':'Lock Y-Axis'}
     function toggleYAxisLock(){if(!yAxisLocked){captureYAxisLocks();yAxisLocked=!!(yAxisRanges.power||yAxisRanges.voltage||yAxisRanges.current)}else{yAxisLocked=false;yAxisRanges.power=null;yAxisRanges.voltage=null;yAxisRanges.current=null}updateYAxisLockButton();renderHistoryFromBrowser(yAxisLocked?'Y-axis locked from current view.':'Y-axis unlocked.')}
     function appendTrendHistorySample(d){const sample={t:Number(d.timestamp_ms)||Date.now(),ps:Number(d.solar&&d.solar.power_mw)||0,pb:Number(d.battery_power_signed_mw)||0,pl:Number(d.load&&d.load.power_mw)||0,vs:Number(d.solar&&d.solar.voltage)||0,vb:Number(d.battery&&d.battery.voltage)||0,vl:Number(d.load&&d.load.voltage)||0,is:Number(d.solar&&d.solar.current_ma)||0,ib:Number(d.battery&&d.battery.current_ma)||0,il:Number(d.load&&d.load.current_ma)||0};const last=trendHistory.length?trendHistory[trendHistory.length-1]:null;if(last&&Math.abs(sample.t-last.t)<Math.max(250,runtimeReportMs/2))return;trendHistory.push(sample);while(trendHistory.length>TREND_HISTORY_LIMIT)trendHistory.shift()}
-    function appendRawHistoryBatch(points){let appended=0;const currentScale=activeHistoryScale();points.forEach(item=>{if(!Array.isArray(item)||item.length<8)return;const seq=Number(item[0])||0;if(seq<=rawCursorSeq)return;const t=Number(item[1])||Date.now(),vs=Number(item[2])||0,vb=Number(item[3])||0,vl=Number(item[4])||0,is=Number(item[5])||0,ib=Number(item[6])||0,il=Number(item[7])||0;rawHistory.push({seq:seq,t:t,vs:vs,vb:vb,vl:vl,is:is,ib:ib,il:il,ps:vs*is,pb:vb*ib,pl:vl*il});rawCursorSeq=seq;appended++});if(rawHistory.length){const latestTimestampMs=Number(rawHistory[rawHistory.length-1].t)||Date.now(),minimumWindowMs=Math.max(RAW_HISTORY_KEEP_MS,currentScale.source==='raw'?currentScale.windowMs:0);pruneTimedHistory(rawHistory,latestTimestampMs-minimumWindowMs)}return appended}
+    function appendArchiveRawPoint(point){const t=Number(point.t)||Date.now(),id=Math.floor(t/ARCHIVE_RAW_BUCKET_MS);if(!archiveRawBucket||archiveRawBucket.id!==id){if(archiveRawBucket){pushUniqueRawDisplayPoint(archiveHistory,archiveRawBucket.first);pushUniqueRawDisplayPoint(archiveHistory,archiveRawBucket.mid);pushUniqueRawDisplayPoint(archiveHistory,archiveRawBucket.last);pruneTimedHistory(archiveHistory,(Number(archiveRawBucket.last.t)||t)-ARCHIVE_RAW_KEEP_MS)}archiveRawBucket={id:id,midMs:id*ARCHIVE_RAW_BUCKET_MS+(ARCHIVE_RAW_BUCKET_MS/2),first:point,mid:point,last:point};return}archiveRawBucket.last=point;if(Math.abs(t-archiveRawBucket.midMs)<=Math.abs((Number(archiveRawBucket.mid.t)||t)-archiveRawBucket.midMs))archiveRawBucket.mid=point}
+    function appendRawHistoryBatch(points){let appended=0;const currentScale=activeHistoryScale();points.forEach(item=>{if(!Array.isArray(item)||item.length<8)return;const seq=Number(item[0])||0;if(seq<=rawCursorSeq)return;const sample={seq:seq,t:Number(item[1])||Date.now(),vs:Number(item[2])||0,vb:Number(item[3])||0,vl:Number(item[4])||0,is:Number(item[5])||0,ib:Number(item[6])||0,il:Number(item[7])||0};sample.ps=sample.vs*sample.is;sample.pb=sample.vb*sample.ib;sample.pl=sample.vl*sample.il;rawHistory.push(sample);appendArchiveRawPoint(sample);rawCursorSeq=seq;appended++});if(rawHistory.length){const latestTimestampMs=Number(rawHistory[rawHistory.length-1].t)||Date.now(),minimumWindowMs=Math.max(RAW_HISTORY_KEEP_MS,currentScale.source==='raw'?currentScale.windowMs:0);pruneTimedHistory(rawHistory,latestTimestampMs-minimumWindowMs)}return appended}
     function downsampleBrowserSamples(points,limit){if(points.length<=limit||limit<3)return points.slice();const reduced=[points[0]];const stride=(points.length-2)/(limit-2);for(let index=1;index<limit-1;index++){reduced.push(points[Math.min(points.length-2,Math.round(index*stride))])}reduced.push(points[points.length-1]);return reduced}
     function rawDisplayPointLimit(scale,range){const spanMs=range&&range.endMs>range.startMs?(range.endMs-range.startMs):scale.windowMs;if(scale.id==='1min')return Math.max(4800,maxPts*16);if(spanMs>=120000)return Math.max(2400,maxPts*10);return Math.max(1200,maxPts*6)}
     function pushUniqueRawDisplayPoint(target,point){if(!point)return;const last=target.length?target[target.length-1]:null;if(last&&Number(last.seq)===Number(point.seq)&&Number(last.t)===Number(point.t))return;target.push(point)}
     function compactStableRawSamples(points,range,limit){if(points.length<=limit||limit<4)return points.slice();const spanMs=Math.max(1,range&&range.endMs>range.startMs?(range.endMs-range.startMs):((Number(points[points.length-1].t)||Date.now())-(Number(points[0].t)||Date.now()))),bucketBudget=Math.max(1,Math.floor(limit/3)),bucketMs=Math.max(1,Math.ceil(spanMs/bucketBudget)),reduced=[];let bucketStart=0;while(bucketStart<points.length){const bucketId=Math.floor((Number(points[bucketStart].t)||0)/bucketMs);let bucketEnd=bucketStart+1;while(bucketEnd<points.length&&Math.floor((Number(points[bucketEnd].t)||0)/bucketMs)===bucketId)bucketEnd++;const bucketCount=bucketEnd-bucketStart;pushUniqueRawDisplayPoint(reduced,points[bucketStart]);if(bucketCount>2)pushUniqueRawDisplayPoint(reduced,points[bucketStart+Math.floor(bucketCount/2)]);if(bucketCount>1)pushUniqueRawDisplayPoint(reduced,points[bucketEnd-1]);bucketStart=bucketEnd}return reduced.length>limit?downsampleBrowserSamples(reduced,limit):reduced}
     function displaySamplesForScale(points,scale,sourceMode,range){if(sourceUsesRaw(sourceMode)){const rawLimit=rawDisplayPointLimit(scale,range);return points.length>rawLimit?compactStableRawSamples(points,range,rawLimit):points.slice()}if(scale.id==='1min'||scale.id==='10min')return points.slice();return points.length>maxPts?downsampleBrowserSamples(points,maxPts):points.slice()}
-    function renderHistoryFromBrowser(noteOverride){const scale=activeHistoryScale(),preferredSource=chooseHistorySource(scale,viewFollowLive?0:viewStartMs,viewFollowLive?0:viewEndMs),baseSource=preferredSource.points;if(!baseSource.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||(scale.source==='raw'?'Waiting for raw live stream...':'Waiting for browser archive history...'));return}const viewRange=effectiveViewRange(scale,baseSource),resolvedSource=chooseHistorySource(scale,viewRange.startMs,viewRange.endMs),source=resolvedSource.points;if(!source.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||'Waiting for browser history...');return}const clampedRange=effectiveViewRange(scale,source),startIndex=lowerBoundByTime(source,clampedRange.startMs),endIndex=lowerBoundByTime(source,clampedRange.endMs+1),visible=(startIndex<endIndex?source.slice(startIndex,endIndex):source.slice(Math.max(0,source.length-1))),displayPoints=displaySamplesForScale(visible,scale,resolvedSource.mode,clampedRange),viewEndMsLocal=clampedRange.endMs||Number(source[source.length-1].t)||Date.now(),visibleCount=visible.length,rawCompactNote=sourceUsesRaw(resolvedSource.mode)&&visibleCount!==displayPoints.length?(' -> '+displayPoints.length+' chart pts | stable raw pick | no avg'):visibleCount!==displayPoints.length?(' -> '+displayPoints.length+' chart pts'):'';lastRendered.points=displayPoints.slice();lastRendered.viewStartMs=clampedRange.startMs;lastRendered.viewEndMs=viewEndMsLocal;lastRendered.sourceMode=resolvedSource.mode;lastRendered.scaleId=scale.id;syncCharts(displayPoints,viewEndMsLocal,scale);const note=noteOverride||('Mode '+(viewFollowLive?'Live logs':'Zoom inspect')+' | Source '+sourceModeLabel(resolvedSource.mode)+' | '+visibleCount+' pts'+rawCompactNote+(sourceUsesRaw(resolvedSource.mode)?(' | avg x'+runtimeInaAvg+' | '+(runtimeMeasuredHz>0?runtimeMeasuredHz.toFixed(1):'0.0')+' Hz'):' | browser archive view'));renderHistoryModeSummary(note)}
-    function renderHistoryModeSummary(noteOverride){const scale=activeHistoryScale(),rawSpanMs=rawBrowserHistorySpanMs(),modeLabel=viewFollowLive?'Live logs':'Zoom inspect',rangeLabel=!viewFollowLive&&viewEndMs>viewStartMs?(' | Selection '+formatHistorySpan(viewEndMs-viewStartMs)):' | Live tail moving';document.querySelectorAll('[data-history-scale]').forEach(btn=>btn.classList.toggle('active',btn.dataset.historyScale===historyScale));updateLiveLogsButton();document.getElementById('history-mode-note').textContent='Mode '+modeLabel+' | Grid '+scale.label+' | Window '+formatHistorySpan(scale.windowMs)+' | ~'+visibleWindowPointEstimate(scale,lastRendered.sourceMode)+' pts'+rangeLabel;document.getElementById('history-source-note').textContent=noteOverride||('Source '+sourceModeLabel(lastRendered.sourceMode)+' | Raw RAM '+formatHistorySpan(rawSpanMs)+' | Archive '+formatHistorySpan(runtimeArchiveEspCapacity*runtimeArchiveIntervalMs)+' | Status '+runtimeReportMs+' ms | Fetch '+rawPollMs+' ms | avg x'+runtimeInaAvg+' | drag on chart to zoom | double-click or Live Logs to follow newest data')}
-    function setHistoryScale(view){historyScale=(view==='3s'||view==='10s'||view==='1min'||view==='10min')?view:'1s';if(!viewFollowLive&&viewEndMs>viewStartMs){const scale=activeHistoryScale(),centerMs=(viewStartMs+viewEndMs)/2;viewStartMs=centerMs-(scale.windowMs/2);viewEndMs=centerMs+(scale.windowMs/2)}saveHistoryScale();if(activeHistoryScale().source==='archive')fetchArchiveHistory(true);renderHistoryFromBrowser()}
+    function renderHistoryFromBrowser(noteOverride){const scale=activeHistoryScale(),preferredSource=chooseHistorySource(scale,viewFollowLive?0:viewStartMs,viewFollowLive?0:viewEndMs),baseSource=preferredSource.points;if(!baseSource.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||(scale.source==='raw'?'Waiting for raw live stream...':'Waiting for browser archive history...'));return}const viewRange=effectiveViewRange(scale,baseSource),resolvedSource=chooseHistorySource(scale,viewRange.startMs,viewRange.endMs),source=resolvedSource.points;if(!source.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||'Waiting for browser history...');return}const clampedRange=effectiveViewRange(scale,source),startIndex=lowerBoundByTime(source,clampedRange.startMs),endIndex=lowerBoundByTime(source,clampedRange.endMs+1),visible=(startIndex<endIndex?source.slice(startIndex,endIndex):source.slice(Math.max(0,source.length-1))),displayPoints=displaySamplesForScale(visible,scale,resolvedSource.mode,clampedRange),viewEndMsLocal=clampedRange.endMs||Number(source[source.length-1].t)||Date.now(),visibleCount=visible.length,rawCompactNote=sourceUsesRaw(resolvedSource.mode)&&visibleCount!==displayPoints.length?(' -> '+displayPoints.length+' chart pts | stable raw pick | no avg'):visibleCount!==displayPoints.length?(' -> '+displayPoints.length+' chart pts'):'';lastRendered.points=displayPoints.slice();lastRendered.viewStartMs=clampedRange.startMs;lastRendered.viewEndMs=viewEndMsLocal;lastRendered.sourceMode=resolvedSource.mode;lastRendered.scaleId=scale.id;syncCharts(displayPoints,viewEndMsLocal,scale);const note=noteOverride||('Mode '+(viewFollowLive?'Live logs':'Zoom inspect')+' | Source '+sourceModeLabel(resolvedSource.mode)+' | '+visibleCount+' pts'+rawCompactNote+(sourceUsesRaw(resolvedSource.mode)?(' | avg x'+runtimeInaAvg+' | '+(runtimeMeasuredHz>0?runtimeMeasuredHz.toFixed(1):'0.0')+' Hz'):' | browser cached view'));renderHistoryModeSummary(note)}
+    function renderHistoryModeSummary(noteOverride){const scale=activeHistoryScale(),rawSpanMs=rawBrowserHistorySpanMs(),archiveSpanMs=archiveRawSpanMs(),modeLabel=viewFollowLive?'Live logs':'Zoom inspect',rangeLabel=!viewFollowLive&&viewEndMs>viewStartMs?(' | Selection '+formatHistorySpan(viewEndMs-viewStartMs)):' | Live tail moving';document.querySelectorAll('[data-history-scale]').forEach(btn=>btn.classList.toggle('active',btn.dataset.historyScale===historyScale));updateLiveLogsButton();document.getElementById('history-mode-note').textContent='Mode '+modeLabel+' | Grid '+scale.label+' | Window '+formatHistorySpan(scale.windowMs)+' | ~'+visibleWindowPointEstimate(scale,lastRendered.sourceMode)+' pts'+rangeLabel;document.getElementById('history-source-note').textContent=noteOverride||('Source '+sourceModeLabel(lastRendered.sourceMode)+' | Raw 10m '+formatHistorySpan(rawSpanMs)+' | Raw 100m '+formatHistorySpan(archiveSpanMs)+' | Status '+runtimeReportMs+' ms | Fetch '+rawPollMs+' ms | avg x'+runtimeInaAvg+' | drag on chart to zoom | double-click or Live Logs to follow newest data')}
+    function setHistoryScale(view){historyScale=(view==='3s'||view==='10s'||view==='1min'||view==='10min')?view:'1s';if(!viewFollowLive&&viewEndMs>viewStartMs){const scale=activeHistoryScale(),centerMs=(viewStartMs+viewEndMs)/2;viewStartMs=centerMs-(scale.windowMs/2);viewEndMs=centerMs+(scale.windowMs/2)}saveHistoryScale();renderHistoryFromBrowser()}
     function flash(id,txt){const el=document.getElementById(id);if(!el)return;el.textContent=txt;el.classList.remove('flashed');void el.offsetWidth;el.classList.add('flashed');setTimeout(()=>el.classList.remove('flashed'),400)}
     function updateArc(arcId,arcTxtId,value,min,max,stroke,labelText){const total=172.8,pct=Math.min(1,Math.max(0,(value-min)/(max-min))),offset=total*(1-pct),arc=document.getElementById(arcId);arc.style.strokeDashoffset=offset;if(stroke)arc.setAttribute('stroke',stroke);document.getElementById(arcTxtId).textContent=labelText!=null?labelText:(Number(value)||0).toFixed(1)+'V'}
     function setPoll(ms){pollMs=Math.max(200,Number(ms)||1000)}
@@ -822,7 +878,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function renderWifiConfig(data,syncInputs){const ssid=data.wifi_ssid||'';if(syncInputs&&document.activeElement!==document.getElementById('wifi-ssid'))document.getElementById('wifi-ssid').value=ssid;if(syncInputs)document.getElementById('wifi-pass').value='';document.getElementById('wifi-note').textContent='Current SSID: '+(ssid||'--')+' | Mode: '+(data.wifi_mode||'--')}
     function renderInaConfig(data,syncInputs){const solar=Number(data.solar_shunt_milliohms),battery=Number(data.battery_shunt_milliohms),load=Number(data.load_shunt_milliohms);document.getElementById('solar-shunt-line').textContent='Shunt config: '+formatShunt(solar);document.getElementById('bat-shunt-line').textContent='INA shunt: '+formatShunt(battery);document.getElementById('load-shunt-line').textContent='Shunt config: '+formatShunt(load);document.getElementById('i2c-map-note').textContent='Map: '+(data.i2c_map||('0x40=INA3221, CH1=Solar '+formatShunt(solar)+', CH2=Battery '+formatShunt(battery)+', CH3=Load '+formatShunt(load)));if(syncInputs){if(document.activeElement!==document.getElementById('solar-shunt-mo'))document.getElementById('solar-shunt-mo').value=Number.isFinite(solar)?solar.toFixed(2):'';if(document.activeElement!==document.getElementById('bat-shunt-mo'))document.getElementById('bat-shunt-mo').value=Number.isFinite(battery)?battery.toFixed(2):'';if(document.activeElement!==document.getElementById('load-shunt-mo'))document.getElementById('load-shunt-mo').value=Number.isFinite(load)?load.toFixed(2):'';}}
     function clampChartPoints(v){v=Number(v);if(!Number.isFinite(v))v=300;return Math.max(30,Math.min(historyCapacityMax,Math.round(v)))}
-    function renderRuntimeConfig(data){const reportMs=Math.max(200,Number(data.sample_interval_ms)||1000),sensorPollMs=Math.max(1,Number(data.sensor_poll_interval_ms)||1),historyMs=Math.max(10,Number(data.history_interval_ms)||100),secondsCap=Math.max(30,Number(data.history_seconds_capacity||data.history_capacity)||600),archiveCap=Math.max(60,Number(data.history_minutes_capacity)||600),archiveIntervalMs=Math.max(1000,Number(data.history_minutes_interval_ms)||10000),rawChartPts=Number(data.chart_point_limit)||300,inaAvg=Math.max(1,Number(data.ina_averaging_samples)||1),inaBusUs=Math.max(140,Number(data.ina_bus_conv_us)||140),inaShuntUs=Math.max(140,Number(data.ina_shunt_conv_us)||140),theoryHz=Number(data.ina_estimated_channel_hz)||0,measuredHz=Number(data.sensor_measured_hz)||0,rawEspCapacity=Math.max(1,Number(data.raw_history_capacity)||2048),rawFetchLimit=Math.max(32,Number(data.raw_history_fetch_limit)||256),regHex=data.ina_config_register_hex||'0x7007';historyCapacityMax=Math.max(secondsCap,rawEspCapacity,archiveCap,2000);const chartPts=clampChartPoints(rawChartPts),largestWindowMs=Math.max(HISTORY_SCALES.s1.windowMs,HISTORY_SCALES.s3.windowMs,HISTORY_SCALES.s10.windowMs,HISTORY_SCALES.m1.windowMs,HISTORY_SCALES.m10.windowMs);if(document.activeElement!==document.getElementById('cfg-sensor-poll'))document.getElementById('cfg-sensor-poll').value=sensorPollMs;if(document.activeElement!==document.getElementById('cfg-interval'))document.getElementById('cfg-interval').value=reportMs;if(document.activeElement!==document.getElementById('cfg-history-interval'))document.getElementById('cfg-history-interval').value=historyMs;if(document.activeElement!==document.getElementById('cfg-chart-points'))document.getElementById('cfg-chart-points').value=chartPts;document.getElementById('cfg-ina-avg').value=String(inaAvg);document.getElementById('cfg-ina-bus-us').value=String(inaBusUs);document.getElementById('cfg-ina-shunt-us').value=String(inaShuntUs);runtimeReportMs=reportMs;runtimeSensorPollMs=sensorPollMs;runtimeRawEspCapacity=rawEspCapacity;runtimeRawFetchLimit=rawFetchLimit;runtimeArchiveEspCapacity=archiveCap;runtimeArchiveIntervalMs=archiveIntervalMs;runtimeMeasuredHz=measuredHz;runtimeInaAvg=inaAvg;maxPts=chartPts;setRawPollMs(Math.max(150,Math.min(1000,Math.round(reportMs/4))));document.getElementById('interval-note').textContent='Poll '+sensorPollMs+' ms | Status '+reportMs+' ms | Raw '+rawPollMs+' ms | ESP '+rawEspCapacity+' pts | Browser RAM '+formatHistorySpan(RAW_HISTORY_KEEP_MS)+' | Archive '+formatHistorySpan(archiveCap*archiveIntervalMs)+' | Trend chart '+chartPts+' pts';document.getElementById('runtime-ina-note').textContent='INA '+regHex+' | avg x'+inaAvg+' | bus '+inaBusUs+' us | shunt '+inaShuntUs+' us | theory '+(theoryHz?theoryHz.toFixed(1):'0.0')+' Hz | measured '+(measuredHz?measuredHz.toFixed(1):'0.0')+' Hz | drag to zoom | lock Y available';renderHistoryFromBrowser()}
+    function renderRuntimeConfig(data){const reportMs=Math.max(200,Number(data.sample_interval_ms)||1000),sensorPollMs=Math.max(1,Number(data.sensor_poll_interval_ms)||1),historyMs=Math.max(10,Number(data.history_interval_ms)||100),secondsCap=Math.max(30,Number(data.history_seconds_capacity||data.history_capacity)||600),archiveCap=Math.max(60,Number(data.history_minutes_capacity)||600),archiveIntervalMs=Math.max(1000,Number(data.history_minutes_interval_ms)||10000),rawChartPts=Number(data.chart_point_limit)||300,inaAvg=Math.max(1,Number(data.ina_averaging_samples)||1),inaBusUs=Math.max(140,Number(data.ina_bus_conv_us)||140),inaShuntUs=Math.max(140,Number(data.ina_shunt_conv_us)||140),theoryHz=Number(data.ina_estimated_channel_hz)||0,measuredHz=Number(data.sensor_measured_hz)||0,rawEspCapacity=Math.max(1,Number(data.raw_history_capacity)||2048),rawFetchLimit=Math.max(32,Number(data.raw_history_fetch_limit)||256),regHex=data.ina_config_register_hex||'0x7007';historyCapacityMax=Math.max(secondsCap,rawEspCapacity,archiveCap,2000);const chartPts=clampChartPoints(rawChartPts);if(document.activeElement!==document.getElementById('cfg-sensor-poll'))document.getElementById('cfg-sensor-poll').value=sensorPollMs;if(document.activeElement!==document.getElementById('cfg-interval'))document.getElementById('cfg-interval').value=reportMs;if(document.activeElement!==document.getElementById('cfg-history-interval'))document.getElementById('cfg-history-interval').value=historyMs;if(document.activeElement!==document.getElementById('cfg-chart-points'))document.getElementById('cfg-chart-points').value=chartPts;document.getElementById('cfg-ina-avg').value=String(inaAvg);document.getElementById('cfg-ina-bus-us').value=String(inaBusUs);document.getElementById('cfg-ina-shunt-us').value=String(inaShuntUs);runtimeReportMs=reportMs;runtimeSensorPollMs=sensorPollMs;runtimeRawEspCapacity=rawEspCapacity;runtimeRawFetchLimit=rawFetchLimit;runtimeArchiveEspCapacity=archiveCap;runtimeArchiveIntervalMs=archiveIntervalMs;runtimeMeasuredHz=measuredHz;runtimeInaAvg=inaAvg;maxPts=chartPts;setRawPollMs(Math.max(150,Math.min(1000,Math.round(reportMs/4))));document.getElementById('interval-note').textContent='Poll '+sensorPollMs+' ms | Status '+reportMs+' ms | Raw '+rawPollMs+' ms | ESP '+rawEspCapacity+' pts | Raw 10m '+formatHistorySpan(RAW_HISTORY_KEEP_MS)+' | Raw 100m '+formatHistorySpan(ARCHIVE_RAW_KEEP_MS)+' | Trend chart '+chartPts+' pts';document.getElementById('runtime-ina-note').textContent='INA '+regHex+' | avg x'+inaAvg+' | bus '+inaBusUs+' us | shunt '+inaShuntUs+' us | theory '+(theoryHz?theoryHz.toFixed(1):'0.0')+' Hz | measured '+(measuredHz?measuredHz.toFixed(1):'0.0')+' Hz | drag to zoom | lock Y available';renderHistoryFromBrowser()}
     function markFlowFormDirty(){flowFormDirty=true;document.getElementById('save-flow').textContent='Save Flow Thresholds *';document.getElementById('flow-edit-note').textContent='Unsaved flow threshold changes pending.'}
     function clearFlowFormDirty(msg){flowFormDirty=false;flowFormSaving=false;document.getElementById('save-flow').textContent='Save Flow Thresholds';document.getElementById('flow-edit-note').textContent=msg||'Changes save only after pressing the button.'}
     function renderFlowThresholdConfig(data){const solar=Math.max(0,Number(data.solar_active_threshold_mw)||0),load=Math.max(0,Number(data.load_active_threshold_mw)||0),battery=Math.max(0,Number(data.battery_flow_threshold_mw)||0);if(!flowFormDirty&&!flowFormSaving){document.getElementById('flow-solar-threshold').value=solar;document.getElementById('flow-load-threshold').value=load;document.getElementById('flow-battery-threshold').value=battery}document.getElementById('flow-threshold-note').textContent='Active thresholds: solar >= '+solar+' mW | battery >= '+battery+' mW | load >= '+load+' mW'}
@@ -1086,7 +1142,6 @@ void WebUi::handleRoot_() {
 void WebUi::handleHealth_() {
   DynamicJsonDocument doc(2048);
   const DeviceConfig& config = wifiService_.config();
-  const WifiRuntime& wifiRuntime = wifiService_.runtime();
   doc["ok"] = true;
   doc["timestamp_ms"] = millis();
   doc["uptime_ms"] = millis();
@@ -1111,7 +1166,8 @@ void WebUi::handleHealth_() {
   doc["free_heap_bytes"] = ESP.getFreeHeap();
   doc["min_free_heap_bytes"] = ESP.getMinFreeHeap();
   JsonObject healthRoot = doc.as<JsonObject>();
-  appendWifiRuntimeStatus(healthRoot, wifiRuntime);
+  appendResetReason(healthRoot);
+  appendWifiRuntimeStatus(healthRoot, wifiService_);
   appendRuntimeConfig(
       healthRoot, config, sensors_, rawHistoryBuffer_, historyBuffer_, minuteHistoryBuffer_);
   appendInaConfig(healthRoot, config);
@@ -1125,7 +1181,6 @@ void WebUi::handleHealth_() {
 void WebUi::handleStatus_() {
   DynamicJsonDocument doc(9216);
   const DeviceConfig& config = wifiService_.config();
-  const WifiRuntime& wifiRuntime = wifiService_.runtime();
   const bool solarActive = isSolarActive(sensors_.solar(), config);
   const bool loadActive = isLoadActive(sensors_.load(), config);
   const BatteryDirection batteryDirection = evaluateBatteryDirection(sensors_.battery(), config);
@@ -1182,7 +1237,8 @@ void WebUi::handleStatus_() {
   doc["free_heap_bytes"] = ESP.getFreeHeap();
   doc["min_free_heap_bytes"] = ESP.getMinFreeHeap();
   JsonObject statusRoot = doc.as<JsonObject>();
-  appendWifiRuntimeStatus(statusRoot, wifiRuntime);
+  appendResetReason(statusRoot);
+  appendWifiRuntimeStatus(statusRoot, wifiService_);
   appendRuntimeConfig(
       statusRoot, config, sensors_, rawHistoryBuffer_, historyBuffer_, minuteHistoryBuffer_);
   appendBatteryProfileFields(statusRoot, config);
@@ -1233,43 +1289,70 @@ void WebUi::handleHistory_() {
   const size_t emitCount = availableCount > requestedLimit ? requestedLimit : availableCount;
   const size_t startIndex = availableCount > emitCount ? availableCount - emitCount : 0U;
 
-  const size_t docCapacity = 4096U + emitCount * 224U;
-  DynamicJsonDocument doc(docCapacity);
-  doc["view"] = historyViewModeText(viewMode);
-  doc["sample_mode"] = "instant_snapshot";
-  doc["sample_note"] = historySampleNote(viewMode);
-  doc["count"] = emitCount;
-  doc["available_count"] = availableCount;
-  doc["capacity"] = selectedBuffer.capacity();
-  doc["interval_ms"] = intervalMs;
-  doc["history_interval_ms"] = intervalMs;
-  doc["chart_point_limit"] = config.chartPointLimit;
-  doc["ina_averaging_samples"] = config.inaAveragingSamples;
+  server_.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server_.send(200, "application/json", "");
 
-  JsonArray points = doc.createNestedArray("points");
+  String chunk;
+  chunk.reserve(320);
+  chunk += F("{\"view\":\"");
+  chunk += historyViewModeText(viewMode);
+  chunk += F("\",\"sample_mode\":\"instant_snapshot\",\"sample_note\":\"");
+  chunk += historySampleNote(viewMode);
+  chunk += F("\",\"count\":");
+  chunk += String(static_cast<unsigned long>(emitCount));
+  chunk += F(",\"available_count\":");
+  chunk += String(static_cast<unsigned long>(availableCount));
+  chunk += F(",\"capacity\":");
+  chunk += String(static_cast<unsigned long>(selectedBuffer.capacity()));
+  chunk += F(",\"interval_ms\":");
+  chunk += String(intervalMs);
+  chunk += F(",\"history_interval_ms\":");
+  chunk += String(intervalMs);
+  chunk += F(",\"chart_point_limit\":");
+  chunk += String(config.chartPointLimit);
+  chunk += F(",\"ina_averaging_samples\":");
+  chunk += String(config.inaAveragingSamples);
+  chunk += F(",\"points\":[");
+  server_.sendContent(chunk);
+
+  String item;
+  item.reserve(256);
+  bool firstPoint = true;
   for (size_t index = startIndex; index < availableCount; ++index) {
     HistoryPoint point;
     if (!selectedBuffer.getOrdered(index, point)) {
       continue;
     }
 
-    JsonObject item = points.createNestedObject();
-    item["timestamp_ms"] = point.timestampMs;
-    item["p_solar_mw"] = point.solarPowerMw;
-    item["p_bat_mw"] = point.batteryPowerMw;
-    item["p_bat_signed_mw"] = point.batteryPowerSignedMw;
-    item["p_load_mw"] = point.loadPowerMw;
-    item["v_solar_v"] = point.solarVoltageV;
-    item["v_bat_v"] = point.batteryVoltageV;
-    item["v_load_v"] = point.loadVoltageV;
-    item["i_solar_ma"] = point.solarCurrentMa;
-    item["i_bat_ma"] = point.batteryCurrentMa;
-    item["i_load_ma"] = point.loadCurrentMa;
+    item = firstPoint ? "{" : ",{";
+    firstPoint = false;
+    item += F("\"timestamp_ms\":");
+    item += String(point.timestampMs);
+    item += F(",\"p_solar_mw\":");
+    item += jsonNumber(point.solarPowerMw);
+    item += F(",\"p_bat_mw\":");
+    item += jsonNumber(point.batteryPowerMw);
+    item += F(",\"p_bat_signed_mw\":");
+    item += jsonNumber(point.batteryPowerSignedMw);
+    item += F(",\"p_load_mw\":");
+    item += jsonNumber(point.loadPowerMw);
+    item += F(",\"v_solar_v\":");
+    item += jsonNumber(point.solarVoltageV);
+    item += F(",\"v_bat_v\":");
+    item += jsonNumber(point.batteryVoltageV);
+    item += F(",\"v_load_v\":");
+    item += jsonNumber(point.loadVoltageV);
+    item += F(",\"i_solar_ma\":");
+    item += jsonNumber(point.solarCurrentMa);
+    item += F(",\"i_bat_ma\":");
+    item += jsonNumber(point.batteryCurrentMa);
+    item += F(",\"i_load_ma\":");
+    item += jsonNumber(point.loadCurrentMa);
+    item += '}';
+    server_.sendContent(item);
   }
 
-  String body;
-  serializeJson(doc, body);
-  server_.send(200, "application/json", body);
+  server_.sendContent(F("]}"));
 }
 
 void WebUi::handleI2cScan_() {
@@ -1320,6 +1403,8 @@ void WebUi::handleConfig_() {
   doc["battery_capacity_mah"] = Config::kBatteryCapacityMah;
   doc["i2c_map"] = buildInaMapText(config);
   JsonObject configRoot = doc.as<JsonObject>();
+  appendResetReason(configRoot);
+  appendWifiRuntimeStatus(configRoot, wifiService_);
   appendRuntimeConfig(
       configRoot, config, sensors_, rawHistoryBuffer_, historyBuffer_, minuteHistoryBuffer_);
   appendBatteryProfileFields(configRoot, config);
@@ -1376,7 +1461,7 @@ void WebUi::handleLiveHistory_() {
   }
 
   String body;
-  body.reserve(768U + requestedLimit * 136U);
+  body.reserve(384U + requestedLimit * 72U);
   body += F("{\"sample_mode\":\"sensor_poll_live\",");
   body += F("\"sample_note\":\"ESP keeps short raw burst; browser keeps and freezes old history.\",");
   body += F("\"after_seq\":");
@@ -1433,6 +1518,7 @@ void WebUi::handleLiveHistory_() {
     body += ']';
     ++emittedCount;
   }
+
   body += F("],\"count\":");
   body += String(static_cast<unsigned long>(emittedCount));
   body += F(",\"truncated\":");

@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <WiFi.h>
 
 #include "config.h"
 
@@ -46,6 +47,11 @@ struct WifiRuntime {
   uint32_t lastStaConnectMs = 0;
   uint32_t lastStaDisconnectMs = 0;
   uint32_t lastStaReconnectAttemptMs = 0;
+  uint32_t lastWifiEventId = 0;
+  uint32_t lastWifiEventMs = 0;
+  uint32_t lastStaGotIpMs = 0;
+  uint16_t lastStaDisconnectReason = 0;
+  int32_t lastStaDisconnectRssi = 0;
 };
 
 class WifiService {
@@ -58,6 +64,8 @@ public:
   bool hasWifiCredentials() const;
   const DeviceConfig& config() const;
   const WifiRuntime& runtime() const;
+  const char* lastWifiEventName() const;
+  const char* lastStaDisconnectReasonName() const;
 
   String ipAddress() const;
   String wifiModeName() const;
@@ -117,6 +125,7 @@ private:
   void saveBool_(const char* key, bool value);
   void saveUInt_(const char* key, uint32_t value);
   void saveFloat_(const char* key, float value);
+  void handleWifiEvent_(WiFiEvent_t event, WiFiEventInfo_t info);
   void startStation_();
   void startAccessPoint_();
   String buildDefaultDeviceId_() const;

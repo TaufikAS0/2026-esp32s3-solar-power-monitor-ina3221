@@ -218,6 +218,7 @@ void BackendSender::runTaskLoop_() {
           queueCount_ > 0 && nextTelemetryAttemptAtMs_ != 0 &&
           static_cast<int32_t>(nowMs - nextTelemetryAttemptAtMs_) >= 0;
       heartbeatReady =
+          queueCount_ == 0 && retryBatchCount_ == 0 && telemetryFailureStreak_ == 0 &&
           static_cast<int32_t>(nowMs - lastHeartbeatAttemptMs_) >=
           static_cast<int32_t>(Config::kBackendHeartbeatIntervalMs);
       xSemaphoreGive(mutex_);
@@ -505,7 +506,7 @@ void BackendSender::sendTelemetry_(uint32_t nowMs) {
   xSemaphoreGive(mutex_);
 
   const DeviceConfig config = wifiService_.config();
-  DynamicJsonDocument doc(12288);
+  DynamicJsonDocument doc(7168);
   doc["schema_version"] = Config::kBackendSchemaVersion;
   doc["source_mode"] = Config::kBackendSourceMode;
   doc["device_id"] = config.deviceId;
@@ -520,14 +521,20 @@ void BackendSender::sendTelemetry_(uint32_t nowMs) {
     appendTelemetrySample(sample, batch[index]);
   }
 
+  const size_t payloadSize = doc.overflowed() ? 0U : measureJson(doc);
   String payload;
-  payload.reserve(4096);
-  serializeJson(doc, payload);
+  const bool payloadReady =
+      payloadSize > 2U && payload.reserve(payloadSize + 16U) &&
+      serializeJson(doc, payload) == payloadSize;
 
   uint16_t statusCode = 0;
   String responseBody;
-  const bool requestSent =
-      postJson_(telemetryEndpointUrl_(config), payload, statusCode, responseBody);
+  bool requestSent = false;
+  if (payloadReady) {
+    requestSent = postJson_(telemetryEndpointUrl_(config), payload, statusCode, responseBody);
+  } else {
+    responseBody = doc.overflowed() ? "payload ovf" : "payload fail";
+  }
   const bool success = requestSent && isSuccessStatus(statusCode);
 
   if (xSemaphoreTake(mutex_, portMAX_DELAY) != pdTRUE) {
@@ -588,13 +595,20 @@ void BackendSender::sendHeartbeat_(uint32_t nowMs) {
   doc["last_send_ok"] = lastSendOk;
   doc["last_send_at_ms"] = lastSendAtMs;
 
+  const size_t payloadSize = doc.overflowed() ? 0U : measureJson(doc);
   String payload;
-  serializeJson(doc, payload);
+  const bool payloadReady =
+      payloadSize > 2U && payload.reserve(payloadSize + 16U) &&
+      serializeJson(doc, payload) == payloadSize;
 
   uint16_t statusCode = 0;
   String responseBody;
-  const bool requestSent =
-      postJson_(heartbeatEndpointUrl_(config), payload, statusCode, responseBody);
+  bool requestSent = false;
+  if (payloadReady) {
+    requestSent = postJson_(heartbeatEndpointUrl_(config), payload, statusCode, responseBody);
+  } else {
+    responseBody = doc.overflowed() ? "payload ovf" : "payload fail";
+  }
   const bool success = requestSent && isSuccessStatus(statusCode);
 
   if (xSemaphoreTake(mutex_, portMAX_DELAY) != pdTRUE) {

@@ -51,6 +51,15 @@ Detail baseline bench disimpan di [docs/BASELINE_v0.11.1.md](docs/BASELINE_v0.11
 - `GET /api/config`
 - OTA over Arduino OTA saat mode STA aktif
 
+## Build Note
+
+Firmware saat ini tidak lagi muat di skema partisi default `1.2MB APP`.
+
+- target board tetap `esp32:esp32:esp32s3`
+- compile/upload gunakan `PartitionScheme=min_spiffs`
+- skema ini tetap menjaga OTA dan memberi slot app sekitar `1.9MB`
+- jika memakai partisi default, build terbaru akan gagal atau image tidak akan boot
+
 ## Catatan Gitflow
 
 Repo baru ini akan memakai pola:
