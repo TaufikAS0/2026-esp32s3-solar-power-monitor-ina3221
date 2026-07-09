@@ -5,7 +5,7 @@
 namespace {
 
 constexpr BatteryProfilePreset kPresets[] = {
-    {"liion_1s_4p20", "Li-ion 1S", 4200, 3000},
+    {"liion_1s_4p20", "Li-ion 1S", 4200, 3600},
     {"lihv_1s_4p35", "LiHV 1S 4.35V", 4350, 3000},
     {"lihv_1s_4p40", "LiHV 1S 4.40V", 4400, 3000},
     {"liion_2s_8p40", "Li-ion 2S", 8400, 6000},

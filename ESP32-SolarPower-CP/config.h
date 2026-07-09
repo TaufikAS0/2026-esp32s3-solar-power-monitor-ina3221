@@ -69,7 +69,7 @@ constexpr uint16_t kArduinoOtaPort = 3232;
 
 constexpr size_t kHistoryCapacity = 600;
 constexpr size_t kRawHistoryCapacity = 2048;
-constexpr uint32_t kRawHistoryFetchLimit = 128;
+constexpr uint32_t kRawHistoryFetchLimit = 256;
 constexpr size_t kBackendQueueCapacity = 32;
 constexpr size_t kBackendBatchMaxSamples = 4;
 
@@ -86,7 +86,7 @@ constexpr uint16_t kBatteryCapacityMah = 2000;
 constexpr uint32_t kBatteryProfileMinMv = 500;
 constexpr uint32_t kBatteryProfileMaxMv = 60000;
 constexpr uint32_t kDefaultBatteryFullMv = 4200;
-constexpr uint32_t kDefaultBatteryEmptyMv = 3000;
+constexpr uint32_t kDefaultBatteryEmptyMv = 3600;
 constexpr char kDefaultBatteryProfileId[] = "liion_1s_4p20";
 
 constexpr uint32_t kMinFlowThresholdMw = 0;

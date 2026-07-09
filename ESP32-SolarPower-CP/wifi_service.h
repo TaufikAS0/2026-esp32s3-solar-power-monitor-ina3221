@@ -24,7 +24,7 @@ struct DeviceConfig {
   String apiKey;
   String batteryProfileId;
   uint32_t batteryFullMv = 4200;
-  uint32_t batteryEmptyMv = 3000;
+  uint32_t batteryEmptyMv = Config::kDefaultBatteryEmptyMv;
   uint32_t solarActiveThresholdMw = Config::kDefaultSolarActiveThresholdMw;
   uint32_t loadActiveThresholdMw = Config::kDefaultLoadActiveThresholdMw;
   uint32_t batteryFlowThresholdMw = Config::kDefaultBatteryFlowThresholdMw;

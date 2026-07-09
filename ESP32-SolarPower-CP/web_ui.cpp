@@ -280,11 +280,11 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     @media (max-width:500px){.cards-row,.cfg-grid{grid-template-columns:1fr}.topbar{flex-direction:column;align-items:flex-start;gap:10px}}
     .arc-svg{width:100%;max-width:120px;display:block;margin:8px auto 10px}
     .flow-card,.chart-card{margin-bottom:14px}
-    .chart-toolbar{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
-    .chart-view-switch{display:flex;gap:8px;flex-wrap:wrap}
+    .chart-toolbar{display:flex;flex-direction:column;align-items:stretch;gap:10px}
+    .chart-view-switch{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .chart-mode-btn{background:var(--bg-card2);border:1px solid var(--border);color:var(--muted);border-radius:999px;padding:7px 12px;font-family:'Courier New',monospace;font-size:.7rem;cursor:pointer;transition:border-color .2s,color .2s,background .2s}
     .chart-mode-btn.active{border-color:var(--blue);color:var(--blue);background:rgba(56,189,248,.12)}
-    .chart-meta{display:flex;flex-direction:column;gap:4px}
+    .chart-meta{display:flex;flex-direction:column;gap:4px;max-width:100%}
     .inp{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-family:'Courier New',monospace;font-size:.8rem;outline:none}
     .inp:focus{border-color:var(--blue)}
     .btn-primary,.btn-secondary,.btn-danger{border-radius:6px;padding:8px 14px;font-family:'Courier New',monospace;font-size:.75rem;cursor:pointer}
@@ -798,8 +798,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
   </div>
 
   <script>
-    let maxPts=300,chartReady=false,lastUpdate=Date.now(),pollMs=1000,pollTimer=null,rawPollMs=250,rawPollTimer=null,rawFetchBusy=false,archiveFetchBusy=false,archiveLastFetchMs=0,rawCursorSeq=0,batteryPresets=[],serverFormDirty=false,serverFormSaving=false,flowFormDirty=false,flowFormSaving=false,ledFormDirty=false,ledFormSaving=false,ledLiveTimer=null,ledSaveTimer=null,historyScale='1s',historyCapacityMax=600,runtimeReportMs=1000,runtimeSensorPollMs=1,runtimeRawEspCapacity=2048,runtimeRawFetchLimit=256,runtimeArchiveEspCapacity=600,runtimeArchiveIntervalMs=10000,runtimeMeasuredHz=0,runtimeInaAvg=1,viewFollowLive=true,viewStartMs=0,viewEndMs=0,yAxisLocked=false,archiveRawBucket=null;
-    const charts={},trendHistory=[],archiveHistory=[],rawHistory=[],SOLAR='#f59e0b',BAT='#10b981',BAT_DIS='#ef4444',COMBO='#a855f7',MUTED='#4a6080',WARN='#ef4444',LOAD='#38bdf8',TREND_HISTORY_LIMIT=3600,RAW_HISTORY_KEEP_MS=600000,ARCHIVE_RAW_KEEP_MS=6000000,ARCHIVE_RAW_BUCKET_MS=1000,HISTORY_SCALE_KEY='solarMonitorHistoryScaleV1',HISTORY_SCALES={s1:{id:'1s',label:'1s',gridMs:1000,windowMs:10000,source:'raw'},s3:{id:'3s',label:'3s',gridMs:3000,windowMs:30000,source:'raw'},s10:{id:'10s',label:'10s',gridMs:10000,windowMs:100000,source:'raw'},m1:{id:'1min',label:'1min',gridMs:60000,windowMs:600000,source:'raw'},m10:{id:'10min',label:'10min',gridMs:600000,windowMs:6000000,source:'archive'}},yAxisRanges={power:null,voltage:null,current:null},lastRendered={points:[],viewStartMs:0,viewEndMs:0,sourceMode:'raw-live',scaleId:'1s'},zoomSelection={active:false,chartId:'',startPx:0,endPx:0};
+    let maxPts=300,chartReady=false,lastUpdate=Date.now(),pollMs=1000,pollTimer=null,rawPollMs=900,rawPollTimer=null,rawFetchBusy=false,archiveFetchBusy=false,archiveLastFetchMs=0,rawCursorSeq=0,batteryPresets=[],serverFormDirty=false,serverFormSaving=false,flowFormDirty=false,flowFormSaving=false,ledFormDirty=false,ledFormSaving=false,ledLiveTimer=null,ledSaveTimer=null,historyScale='1s',historyCapacityMax=600,runtimeReportMs=1000,runtimeSensorPollMs=1,runtimeRawEspCapacity=2048,runtimeRawFetchLimit=256,runtimeArchiveEspCapacity=600,runtimeArchiveIntervalMs=10000,runtimeMeasuredHz=0,runtimeInaAvg=1,viewFollowLive=true,viewStartMs=0,viewEndMs=0,yAxisLocked=false,archiveRawBucket=null;
+    const charts={},trendHistory=[],archiveHistory=[],minuteHistory=[],rawHistory=[],SOLAR='#f59e0b',BAT='#10b981',BAT_DIS='#ef4444',COMBO='#a855f7',MUTED='#4a6080',WARN='#ef4444',LOAD='#38bdf8',TREND_HISTORY_LIMIT=3600,RAW_HISTORY_KEEP_MS=600000,ARCHIVE_RAW_KEEP_MS=6000000,ARCHIVE_RAW_BUCKET_MS=1000,MAX_BROWSER_RAW_FETCH_LIMIT=512,HISTORY_SCALE_KEY='solarMonitorHistoryScaleV1',HISTORY_SCALES={s1:{id:'1s',label:'1s',gridMs:1000,windowMs:10000,source:'raw'},s3:{id:'3s',label:'3s',gridMs:3000,windowMs:30000,source:'raw'},s10:{id:'10s',label:'10s',gridMs:10000,windowMs:100000,source:'raw'},m1:{id:'1min',label:'1min',gridMs:60000,windowMs:600000,source:'raw'},m10:{id:'10min',label:'10min',gridMs:600000,windowMs:6000000,source:'raw'}},yAxisRanges={power:null,voltage:null,current:null},lastRendered={points:[],viewStartMs:0,viewEndMs:0,sourceMode:'raw-live',scaleId:'1s'},zoomSelection={active:false,chartId:'',startPx:0,endPx:0};
     function pad2(v){v=Math.max(0,Math.floor(Number(v)||0));return String(v).padStart(2,'0')}
     function pad3(v){v=Math.max(0,Math.floor(Number(v)||0));return String(v).padStart(3,'0')}
     function formatClockMs(ms){const d=new Date(Number(ms)||Date.now());return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds())+'.'+pad3(d.getMilliseconds())}
@@ -813,29 +813,34 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function activeHistoryScale(){if(historyScale==='3s')return HISTORY_SCALES.s3;if(historyScale==='10s')return HISTORY_SCALES.s10;if(historyScale==='1min')return HISTORY_SCALES.m1;if(historyScale==='10min')return HISTORY_SCALES.m10;return HISTORY_SCALES.s1}
     function rawBrowserHistorySpanMs(){return rawHistory.length>1?Math.max(0,(Number(rawHistory[rawHistory.length-1].t)||0)-(Number(rawHistory[0].t)||0)):0}
     function archiveRawSpanMs(){return archiveHistory.length>1?Math.max(0,(Number(archiveHistory[archiveHistory.length-1].t)||0)-(Number(archiveHistory[0].t)||0)):0}
-    function sourceUsesRaw(mode){return mode==='raw-live'||mode==='raw-cache'}
-    function visibleWindowPointEstimate(scale,mode){if(sourceUsesRaw(mode)||(!mode&&scale.source==='raw')){const hz=runtimeMeasuredHz>0?runtimeMeasuredHz:(1000/Math.max(1,runtimeSensorPollMs));return Math.max(1,Math.round(scale.windowMs*hz/1000))}const archiveIntervalMs=(mode==='archive-cache'||(!mode&&scale.source==='archive'))?runtimeArchiveIntervalMs:runtimeReportMs;return Math.max(1,Math.round(scale.windowMs/Math.max(1,archiveIntervalMs)))}
+    function sourceUsesLiveRaw(mode){return mode==='raw-live'||mode==='raw-cache'}
+    function sourceUsesStableRaw(mode){return sourceUsesLiveRaw(mode)||mode==='archive-raw'}
+    function visibleWindowPointEstimate(scale,mode){if(sourceUsesLiveRaw(mode)||(!mode&&scale.source==='raw')){const hz=runtimeMeasuredHz>0?runtimeMeasuredHz:(1000/Math.max(1,runtimeSensorPollMs));return Math.max(1,Math.round(scale.windowMs*hz/1000))}if(mode==='archive-raw')return Math.max(1,Math.round((scale.windowMs*3)/Math.max(1,ARCHIVE_RAW_BUCKET_MS)));const archiveIntervalMs=mode==='minute-cache'?runtimeArchiveIntervalMs:runtimeReportMs;return Math.max(1,Math.round(scale.windowMs/Math.max(1,archiveIntervalMs)))}
+    function measuredRawHz(){return runtimeMeasuredHz>0?runtimeMeasuredHz:(1000/Math.max(1,runtimeSensorPollMs))}
+    function computeRawPollMs(){const bufferWindowMs=Math.max(900,Math.round((runtimeRawEspCapacity*1000)/Math.max(1,measuredRawHz())));return Math.max(700,Math.min(1200,Math.round(bufferWindowMs/3)))}
+    function effectiveRawFetchLimit(){const predicted=Math.ceil((measuredRawHz()*Math.max(500,rawPollMs)/1000)*1.35),hardCap=Math.max(128,Math.min(runtimeRawEspCapacity,MAX_BROWSER_RAW_FETCH_LIMIT)),baseLimit=Math.max(128,Number(runtimeRawFetchLimit)||128),target=Math.max(baseLimit,predicted);return Math.max(128,Math.min(hardCap,Math.ceil(target/32)*32))}
     function saveHistoryScale(){try{localStorage.setItem(HISTORY_SCALE_KEY,historyScale)}catch(e){}}
     function loadHistoryScale(){try{const stored=localStorage.getItem(HISTORY_SCALE_KEY);if(stored==='1s'||stored==='3s'||stored==='10s'||stored==='1min'||stored==='10min')historyScale=stored}catch(e){}}
     function lowerBoundByTime(points,targetMs){let lo=0,hi=points.length;while(lo<hi){const mid=(lo+hi)>>1;if((Number(points[mid].t)||0)<targetMs)lo=mid+1;else hi=mid}return lo}
     function pruneTimedHistory(list,minTimestampMs){const cut=lowerBoundByTime(list,minTimestampMs);if(cut>0)list.splice(0,cut)}
-    function clearBrowserHistory(){trendHistory.length=0;archiveHistory.length=0;rawHistory.length=0;rawCursorSeq=0;archiveLastFetchMs=0;archiveRawBucket=null;viewFollowLive=true;viewStartMs=0;viewEndMs=0;renderHistoryFromBrowser('Browser RAM cleared. Waiting for new live samples...')}
+    function clearBrowserHistory(){trendHistory.length=0;archiveHistory.length=0;minuteHistory.length=0;rawHistory.length=0;rawCursorSeq=0;archiveLastFetchMs=0;archiveRawBucket=null;viewFollowLive=true;viewStartMs=0;viewEndMs=0;renderHistoryFromBrowser('Browser RAM cleared. Waiting for new live samples...')}
     function updateLiveLogsButton(){const button=document.getElementById('history-live-logs');if(!button)return;button.classList.toggle('active',viewFollowLive);button.textContent=viewFollowLive?'Live Logs ON':'Live Logs'}
     function activateLiveLogs(note){viewFollowLive=true;viewStartMs=0;viewEndMs=0;renderHistoryFromBrowser(note||'Live logs mode enabled.')}
     function resetHistoryZoom(note){activateLiveLogs(note||'Zoom reset to live logs.')}
     function chartByCanvasId(id){if(id==='powerChart')return charts.power;if(id==='voltageChart')return charts.voltage;if(id==='currentChart')return charts.current;return null}
-    function canvasEventPoint(ev,chart){const canvas=chart&&chart.canvas?chart.canvas:ev.currentTarget,rect=canvas.getBoundingClientRect(),scaleX=canvas.width/Math.max(1,rect.width),scaleY=canvas.height/Math.max(1,rect.height);return{x:(ev.clientX-rect.left)*scaleX,y:(ev.clientY-rect.top)*scaleY}}
-    function canvasPixelX(ev){const chart=chartByCanvasId(ev.currentTarget.id),point=canvasEventPoint(ev,chart);if(!chart||!chart.chartArea)return Math.max(0,Math.min(ev.currentTarget.width,point.x));return Math.max(chart.chartArea.left,Math.min(chart.chartArea.right,point.x))}
+    function canvasEventPoint(ev,chart){const canvas=chart&&chart.canvas?chart.canvas:ev.currentTarget,rect=canvas.getBoundingClientRect(),chartWidth=chart&&Number(chart.width)?Number(chart.width):rect.width,chartHeight=chart&&Number(chart.height)?Number(chart.height):rect.height,scaleX=chartWidth/Math.max(1,rect.width),scaleY=chartHeight/Math.max(1,rect.height);return{x:(ev.clientX-rect.left)*scaleX,y:(ev.clientY-rect.top)*scaleY}}
+    function canvasPixelX(ev){const chart=chartByCanvasId(ev.currentTarget.id),point=canvasEventPoint(ev,chart),chartWidth=chart&&Number(chart.width)?Number(chart.width):ev.currentTarget.width;if(!chart||!chart.chartArea)return Math.max(0,Math.min(chartWidth,point.x));return Math.max(chart.chartArea.left,Math.min(chart.chartArea.right,point.x))}
     function chartEventInPlot(ev,chart){if(!chart||!chart.chartArea)return false;const point=canvasEventPoint(ev,chart);return point.x>=chart.chartArea.left&&point.x<=chart.chartArea.right&&point.y>=chart.chartArea.top&&point.y<=chart.chartArea.bottom}
     function registerChartPlugins(){if(window.__solarChartPluginsRegistered||typeof Chart==='undefined')return;window.__solarChartPluginsRegistered=true;Chart.register({id:'solarDragZoomOverlay',afterDraw(chart){if(!zoomSelection.active||zoomSelection.chartId!==chart.canvas.id)return;const left=Math.max(chart.chartArea.left,Math.min(zoomSelection.startPx,zoomSelection.endPx)),right=Math.min(chart.chartArea.right,Math.max(zoomSelection.startPx,zoomSelection.endPx));if(right-left<2)return;const ctx=chart.ctx;ctx.save();ctx.fillStyle='rgba(56,189,248,0.16)';ctx.strokeStyle='rgba(56,189,248,0.95)';ctx.lineWidth=1;ctx.fillRect(left,chart.chartArea.top,right-left,chart.chartArea.bottom-chart.chartArea.top);ctx.strokeRect(left,chart.chartArea.top,right-left,chart.chartArea.bottom-chart.chartArea.top);ctx.restore()}})}
     function beginChartSelection(ev){const chart=chartByCanvasId(ev.currentTarget.id);if(!chartEventInPlot(ev,chart))return;zoomSelection.active=true;zoomSelection.chartId=ev.currentTarget.id;zoomSelection.startPx=canvasPixelX(ev);zoomSelection.endPx=zoomSelection.startPx;if(chart)chart.draw()}
     function moveChartSelection(ev){if(!zoomSelection.active||zoomSelection.chartId!==ev.currentTarget.id)return;zoomSelection.endPx=canvasPixelX(ev);const chart=chartByCanvasId(zoomSelection.chartId);if(chart)chart.draw()}
     function endChartSelection(){if(!zoomSelection.active)return;const chartId=zoomSelection.chartId,chart=chartByCanvasId(chartId),left=Math.min(zoomSelection.startPx,zoomSelection.endPx),right=Math.max(zoomSelection.startPx,zoomSelection.endPx);zoomSelection.active=false;zoomSelection.chartId='';if(chart)chart.draw();if(!chart||right-left<10||!lastRendered.viewEndMs)return;const xScale=chart.scales.x,relStart=xScale.getValueForPixel(left),relEnd=xScale.getValueForPixel(right),startMs=lastRendered.viewEndMs+Math.min(relStart,relEnd)*1000,endMs=lastRendered.viewEndMs+Math.max(relStart,relEnd)*1000;if(!Number.isFinite(startMs)||!Number.isFinite(endMs)||endMs-startMs<50)return;viewFollowLive=false;viewStartMs=startMs;viewEndMs=endMs;renderHistoryFromBrowser('Zoom '+formatHistorySpan(endMs-startMs)+' selected.')}
     function installChartInteractions(){['powerChart','voltageChart','currentChart'].forEach(id=>{const canvas=document.getElementById(id);if(!canvas||canvas.dataset.zoomReady==='1')return;canvas.dataset.zoomReady='1';canvas.addEventListener('mousedown',beginChartSelection);canvas.addEventListener('mousemove',moveChartSelection);canvas.addEventListener('dblclick',()=>activateLiveLogs('Live logs restored from chart double-click.'))});if(!window.__solarChartSelectionHooked){window.__solarChartSelectionHooked=true;window.addEventListener('mouseup',endChartSelection)}}
-    function sourceModeLabel(mode){if(mode==='raw-live')return'live burst';if(mode==='raw-cache')return'browser raw cache';if(mode==='archive-cache')return'browser 100m raw fifo';return'browser cached history'}
+    function sourceModeLabel(mode){if(mode==='raw-live')return'live raw burst';if(mode==='raw-cache')return'browser raw cache';if(mode==='archive-raw')return'browser raw fifo';if(mode==='minute-cache')return'browser cached history';return'device fallback'}
     function rawSourceCovers(startMs,endMs){return rawHistory.length&&Number(rawHistory[0].t)<=startMs&&Number(rawHistory[rawHistory.length-1].t)>=endMs}
+    function archiveSourceCovers(startMs,endMs){return archiveHistory.length&&Number(archiveHistory[0].t)<=startMs&&Number(archiveHistory[archiveHistory.length-1].t)>=endMs}
     function normalizeArchivePoint(item){return{t:Number(item&&item.timestamp_ms)||Date.now(),ps:Number(item&&item.p_solar_mw)||0,pb:Number(item&&item.p_bat_signed_mw!=null?item.p_bat_signed_mw:item&&item.p_bat_mw)||0,pl:Number(item&&item.p_load_mw)||0,vs:Number(item&&item.v_solar_v)||0,vb:Number(item&&item.v_bat_v)||0,vl:Number(item&&item.v_load_v)||0,is:Number(item&&item.i_solar_ma)||0,ib:Number(item&&item.i_bat_ma)||0,il:Number(item&&item.i_load_ma)||0}}
-    function chooseHistorySource(scale,startMs,endMs){if(scale.source==='archive'){if(startMs>0&&endMs>startMs&&rawSourceCovers(startMs,endMs))return{points:rawHistory,mode:viewFollowLive?'raw-live':'raw-cache'};if(archiveHistory.length)return{points:archiveHistory,mode:'archive-cache'};if(rawHistory.length)return{points:rawHistory,mode:'raw-cache'};if(trendHistory.length)return{points:trendHistory,mode:'trend-archive'};return{points:[],mode:'archive-cache'}}if(startMs===0&&endMs===0)return rawHistory.length?{points:rawHistory,mode:'raw-live'}:(trendHistory.length?{points:trendHistory,mode:'trend-archive'}:(archiveHistory.length?{points:archiveHistory,mode:'archive-cache'}:{points:[],mode:'raw-live'}));if(rawSourceCovers(startMs,endMs))return{points:rawHistory,mode:viewFollowLive?'raw-live':'raw-cache'};if(trendHistory.length)return{points:trendHistory,mode:'trend-archive'};if(archiveHistory.length)return{points:archiveHistory,mode:'archive-cache'};return rawHistory.length?{points:rawHistory,mode:'raw-cache'}:{points:[],mode:'raw-live'}}
+    function chooseHistorySource(scale,startMs,endMs){if(startMs===0&&endMs===0){if(rawHistory.length)return{points:rawHistory,mode:'raw-live'};if(archiveHistory.length)return{points:archiveHistory,mode:'archive-raw'};if(minuteHistory.length)return{points:minuteHistory,mode:'minute-cache'};if(trendHistory.length)return{points:trendHistory,mode:'trend-archive'};return{points:[],mode:'raw-live'}}if(rawSourceCovers(startMs,endMs))return{points:rawHistory,mode:'raw-cache'};if(archiveSourceCovers(startMs,endMs)||archiveHistory.length)return{points:archiveHistory,mode:'archive-raw'};if(minuteHistory.length)return{points:minuteHistory,mode:'minute-cache'};if(trendHistory.length)return{points:trendHistory,mode:'trend-archive'};return rawHistory.length?{points:rawHistory,mode:'raw-cache'}:{points:[],mode:'raw-live'}}
     function effectiveViewRange(scale,source){if(!source.length){const now=Date.now();return{startMs:now-scale.windowMs,endMs:now}}const sourceStart=Number(source[0].t)||Date.now(),sourceEnd=Number(source[source.length-1].t)||sourceStart;if(viewFollowLive){let endMs=sourceEnd,startMs=endMs-scale.windowMs;if(startMs<sourceStart)startMs=sourceStart;return{startMs:startMs,endMs:endMs}}let startMs=viewStartMs,endMs=viewEndMs;if(!(endMs>startMs)){endMs=Math.max(sourceEnd,sourceStart+scale.windowMs);startMs=endMs-scale.windowMs}const spanMs=Math.max(1,endMs-startMs);if(startMs<sourceStart){startMs=sourceStart;endMs=startMs+spanMs}if(endMs>sourceEnd){endMs=sourceEnd;startMs=endMs-spanMs}if(startMs<sourceStart)startMs=sourceStart;if(endMs<=startMs)endMs=Math.max(sourceEnd,startMs+1);return{startMs:startMs,endMs:endMs}}
     function calcYRange(points,keys){let min=Infinity,max=-Infinity;points.forEach(point=>keys.forEach(key=>{const value=Number(point[key]);if(Number.isFinite(value)){if(value<min)min=value;if(value>max)max=value}}));if(!Number.isFinite(min)||!Number.isFinite(max))return null;if(Math.abs(max-min)<0.0001){const pad=Math.max(1,Math.abs(max)*0.1);min-=pad;max+=pad}else{const pad=(max-min)*0.08;min-=pad;max+=pad}if(min>0&&max>0)min=Math.max(0,min);return{min:min,max:max}}
     function captureYAxisLocks(){if(!lastRendered.points.length)return;yAxisRanges.power=calcYRange(lastRendered.points,['ps','pb','pl']);yAxisRanges.voltage=calcYRange(lastRendered.points,['vs','vb','vl']);yAxisRanges.current=calcYRange(lastRendered.points,['is','ib','il'])}
@@ -848,14 +853,14 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function rawDisplayPointLimit(scale,range){const spanMs=range&&range.endMs>range.startMs?(range.endMs-range.startMs):scale.windowMs;if(scale.id==='1min')return Math.max(4800,maxPts*16);if(spanMs>=120000)return Math.max(2400,maxPts*10);return Math.max(1200,maxPts*6)}
     function pushUniqueRawDisplayPoint(target,point){if(!point)return;const last=target.length?target[target.length-1]:null;if(last&&Number(last.seq)===Number(point.seq)&&Number(last.t)===Number(point.t))return;target.push(point)}
     function compactStableRawSamples(points,range,limit){if(points.length<=limit||limit<4)return points.slice();const spanMs=Math.max(1,range&&range.endMs>range.startMs?(range.endMs-range.startMs):((Number(points[points.length-1].t)||Date.now())-(Number(points[0].t)||Date.now()))),bucketBudget=Math.max(1,Math.floor(limit/3)),bucketMs=Math.max(1,Math.ceil(spanMs/bucketBudget)),reduced=[];let bucketStart=0;while(bucketStart<points.length){const bucketId=Math.floor((Number(points[bucketStart].t)||0)/bucketMs);let bucketEnd=bucketStart+1;while(bucketEnd<points.length&&Math.floor((Number(points[bucketEnd].t)||0)/bucketMs)===bucketId)bucketEnd++;const bucketCount=bucketEnd-bucketStart;pushUniqueRawDisplayPoint(reduced,points[bucketStart]);if(bucketCount>2)pushUniqueRawDisplayPoint(reduced,points[bucketStart+Math.floor(bucketCount/2)]);if(bucketCount>1)pushUniqueRawDisplayPoint(reduced,points[bucketEnd-1]);bucketStart=bucketEnd}return reduced.length>limit?downsampleBrowserSamples(reduced,limit):reduced}
-    function displaySamplesForScale(points,scale,sourceMode,range){if(sourceUsesRaw(sourceMode)){const rawLimit=rawDisplayPointLimit(scale,range);return points.length>rawLimit?compactStableRawSamples(points,range,rawLimit):points.slice()}if(scale.id==='1min'||scale.id==='10min')return points.slice();return points.length>maxPts?downsampleBrowserSamples(points,maxPts):points.slice()}
-    function renderHistoryFromBrowser(noteOverride){const scale=activeHistoryScale(),preferredSource=chooseHistorySource(scale,viewFollowLive?0:viewStartMs,viewFollowLive?0:viewEndMs),baseSource=preferredSource.points;if(!baseSource.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||(scale.source==='raw'?'Waiting for raw live stream...':'Waiting for browser archive history...'));return}const viewRange=effectiveViewRange(scale,baseSource),resolvedSource=chooseHistorySource(scale,viewRange.startMs,viewRange.endMs),source=resolvedSource.points;if(!source.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||'Waiting for browser history...');return}const clampedRange=effectiveViewRange(scale,source),startIndex=lowerBoundByTime(source,clampedRange.startMs),endIndex=lowerBoundByTime(source,clampedRange.endMs+1),visible=(startIndex<endIndex?source.slice(startIndex,endIndex):source.slice(Math.max(0,source.length-1))),displayPoints=displaySamplesForScale(visible,scale,resolvedSource.mode,clampedRange),viewEndMsLocal=clampedRange.endMs||Number(source[source.length-1].t)||Date.now(),visibleCount=visible.length,rawCompactNote=sourceUsesRaw(resolvedSource.mode)&&visibleCount!==displayPoints.length?(' -> '+displayPoints.length+' chart pts | stable raw pick | no avg'):visibleCount!==displayPoints.length?(' -> '+displayPoints.length+' chart pts'):'';lastRendered.points=displayPoints.slice();lastRendered.viewStartMs=clampedRange.startMs;lastRendered.viewEndMs=viewEndMsLocal;lastRendered.sourceMode=resolvedSource.mode;lastRendered.scaleId=scale.id;syncCharts(displayPoints,viewEndMsLocal,scale);const note=noteOverride||('Mode '+(viewFollowLive?'Live logs':'Zoom inspect')+' | Source '+sourceModeLabel(resolvedSource.mode)+' | '+visibleCount+' pts'+rawCompactNote+(sourceUsesRaw(resolvedSource.mode)?(' | avg x'+runtimeInaAvg+' | '+(runtimeMeasuredHz>0?runtimeMeasuredHz.toFixed(1):'0.0')+' Hz'):' | browser cached view'));renderHistoryModeSummary(note)}
-    function renderHistoryModeSummary(noteOverride){const scale=activeHistoryScale(),rawSpanMs=rawBrowserHistorySpanMs(),archiveSpanMs=archiveRawSpanMs(),modeLabel=viewFollowLive?'Live logs':'Zoom inspect',rangeLabel=!viewFollowLive&&viewEndMs>viewStartMs?(' | Selection '+formatHistorySpan(viewEndMs-viewStartMs)):' | Live tail moving';document.querySelectorAll('[data-history-scale]').forEach(btn=>btn.classList.toggle('active',btn.dataset.historyScale===historyScale));updateLiveLogsButton();document.getElementById('history-mode-note').textContent='Mode '+modeLabel+' | Grid '+scale.label+' | Window '+formatHistorySpan(scale.windowMs)+' | ~'+visibleWindowPointEstimate(scale,lastRendered.sourceMode)+' pts'+rangeLabel;document.getElementById('history-source-note').textContent=noteOverride||('Source '+sourceModeLabel(lastRendered.sourceMode)+' | Raw 10m '+formatHistorySpan(rawSpanMs)+' | Raw 100m '+formatHistorySpan(archiveSpanMs)+' | Status '+runtimeReportMs+' ms | Fetch '+rawPollMs+' ms | avg x'+runtimeInaAvg+' | drag on chart to zoom | double-click or Live Logs to follow newest data')}
+    function displaySamplesForScale(points,scale,sourceMode,range){if(sourceUsesStableRaw(sourceMode)){const rawLimit=rawDisplayPointLimit(scale,range);return points.length>rawLimit?compactStableRawSamples(points,range,rawLimit):points.slice()}if(scale.id==='1min'||scale.id==='10min')return points.slice();return points.length>maxPts?downsampleBrowserSamples(points,maxPts):points.slice()}
+    function renderHistoryFromBrowser(noteOverride){const scale=activeHistoryScale(),preferredSource=chooseHistorySource(scale,viewFollowLive?0:viewStartMs,viewFollowLive?0:viewEndMs),baseSource=preferredSource.points;if(!baseSource.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||'Waiting for browser raw history...');return}const viewRange=effectiveViewRange(scale,baseSource),resolvedSource=chooseHistorySource(scale,viewRange.startMs,viewRange.endMs),source=resolvedSource.points;if(!source.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||'Waiting for browser history...');return}const clampedRange=effectiveViewRange(scale,source),startIndex=lowerBoundByTime(source,clampedRange.startMs),endIndex=lowerBoundByTime(source,clampedRange.endMs+1),visible=(startIndex<endIndex?source.slice(startIndex,endIndex):source.slice(Math.max(0,source.length-1))),displayPoints=displaySamplesForScale(visible,scale,resolvedSource.mode,clampedRange),viewEndMsLocal=clampedRange.endMs||Number(source[source.length-1].t)||Date.now(),visibleCount=visible.length,pointSummary=visibleCount!==displayPoints.length?(visibleCount+' pts -> '+displayPoints.length+' chart pts'):(visibleCount+' pts');lastRendered.points=displayPoints.slice();lastRendered.viewStartMs=clampedRange.startMs;lastRendered.viewEndMs=viewEndMsLocal;lastRendered.sourceMode=resolvedSource.mode;lastRendered.scaleId=scale.id;syncCharts(displayPoints,viewEndMsLocal,scale);let tail=' | browser cached view';if(sourceUsesStableRaw(resolvedSource.mode))tail=(visibleCount!==displayPoints.length?' | stable raw pick':' | raw fifo')+' | no avg | avg x'+runtimeInaAvg+' | '+(runtimeMeasuredHz>0?runtimeMeasuredHz.toFixed(1):'0.0')+' Hz';const note=noteOverride||('Mode '+(viewFollowLive?'Live logs':'Zoom inspect')+' | Source '+sourceModeLabel(resolvedSource.mode)+' | '+pointSummary+tail);renderHistoryModeSummary(note)}
+    function renderHistoryModeSummary(noteOverride){const scale=activeHistoryScale(),modeLabel=viewFollowLive?'Live logs':'Zoom inspect',rangeLabel=!viewFollowLive&&viewEndMs>viewStartMs?(' | Sel '+formatHistorySpan(viewEndMs-viewStartMs)):' | Live tail';document.querySelectorAll('[data-history-scale]').forEach(btn=>btn.classList.toggle('active',btn.dataset.historyScale===historyScale));updateLiveLogsButton();document.getElementById('history-mode-note').textContent='Mode '+modeLabel+' | Grid '+scale.label+' | Window '+formatHistorySpan(scale.windowMs)+' | ~'+visibleWindowPointEstimate(scale,lastRendered.sourceMode)+' pts'+rangeLabel;document.getElementById('history-source-note').textContent=noteOverride||('Source '+sourceModeLabel(lastRendered.sourceMode)+' | Raw 10m '+formatHistorySpan(rawBrowserHistorySpanMs())+' | Raw 100m '+formatHistorySpan(archiveRawSpanMs())+' | Fetch '+rawPollMs+' ms / '+effectiveRawFetchLimit()+' pts | drag to zoom | dblclick or Live Logs to follow')}
     function setHistoryScale(view){historyScale=(view==='3s'||view==='10s'||view==='1min'||view==='10min')?view:'1s';if(!viewFollowLive&&viewEndMs>viewStartMs){const scale=activeHistoryScale(),centerMs=(viewStartMs+viewEndMs)/2;viewStartMs=centerMs-(scale.windowMs/2);viewEndMs=centerMs+(scale.windowMs/2)}saveHistoryScale();renderHistoryFromBrowser()}
     function flash(id,txt){const el=document.getElementById(id);if(!el)return;el.textContent=txt;el.classList.remove('flashed');void el.offsetWidth;el.classList.add('flashed');setTimeout(()=>el.classList.remove('flashed'),400)}
     function updateArc(arcId,arcTxtId,value,min,max,stroke,labelText){const total=172.8,pct=Math.min(1,Math.max(0,(value-min)/(max-min))),offset=total*(1-pct),arc=document.getElementById(arcId);arc.style.strokeDashoffset=offset;if(stroke)arc.setAttribute('stroke',stroke);document.getElementById(arcTxtId).textContent=labelText!=null?labelText:(Number(value)||0).toFixed(1)+'V'}
     function setPoll(ms){pollMs=Math.max(200,Number(ms)||1000)}
-    function setRawPollMs(ms){rawPollMs=Math.max(150,Math.min(1000,Math.round(Number(ms)||250)))}
+    function setRawPollMs(ms){rawPollMs=Math.max(700,Math.min(1500,Math.round(Number(ms)||1000)))}
     function schedulePoll(){if(pollTimer)clearTimeout(pollTimer);const delay=document.hidden?Math.max(3000,pollMs):pollMs;pollTimer=setTimeout(fetchData,delay)}
     function scheduleRawPoll(){if(rawPollTimer)clearTimeout(rawPollTimer);const delay=document.hidden?Math.max(1000,rawPollMs):rawPollMs;rawPollTimer=setTimeout(fetchRawHistory,delay)}
     function setNode(boxId,textId,stroke,fill){const box=document.getElementById(boxId);box.setAttribute('stroke',stroke);if(fill!==undefined)box.setAttribute('fill',fill);document.getElementById(textId).setAttribute('fill',stroke)}
@@ -878,7 +883,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function renderWifiConfig(data,syncInputs){const ssid=data.wifi_ssid||'';if(syncInputs&&document.activeElement!==document.getElementById('wifi-ssid'))document.getElementById('wifi-ssid').value=ssid;if(syncInputs)document.getElementById('wifi-pass').value='';document.getElementById('wifi-note').textContent='Current SSID: '+(ssid||'--')+' | Mode: '+(data.wifi_mode||'--')}
     function renderInaConfig(data,syncInputs){const solar=Number(data.solar_shunt_milliohms),battery=Number(data.battery_shunt_milliohms),load=Number(data.load_shunt_milliohms);document.getElementById('solar-shunt-line').textContent='Shunt config: '+formatShunt(solar);document.getElementById('bat-shunt-line').textContent='INA shunt: '+formatShunt(battery);document.getElementById('load-shunt-line').textContent='Shunt config: '+formatShunt(load);document.getElementById('i2c-map-note').textContent='Map: '+(data.i2c_map||('0x40=INA3221, CH1=Solar '+formatShunt(solar)+', CH2=Battery '+formatShunt(battery)+', CH3=Load '+formatShunt(load)));if(syncInputs){if(document.activeElement!==document.getElementById('solar-shunt-mo'))document.getElementById('solar-shunt-mo').value=Number.isFinite(solar)?solar.toFixed(2):'';if(document.activeElement!==document.getElementById('bat-shunt-mo'))document.getElementById('bat-shunt-mo').value=Number.isFinite(battery)?battery.toFixed(2):'';if(document.activeElement!==document.getElementById('load-shunt-mo'))document.getElementById('load-shunt-mo').value=Number.isFinite(load)?load.toFixed(2):'';}}
     function clampChartPoints(v){v=Number(v);if(!Number.isFinite(v))v=300;return Math.max(30,Math.min(historyCapacityMax,Math.round(v)))}
-    function renderRuntimeConfig(data){const reportMs=Math.max(200,Number(data.sample_interval_ms)||1000),sensorPollMs=Math.max(1,Number(data.sensor_poll_interval_ms)||1),historyMs=Math.max(10,Number(data.history_interval_ms)||100),secondsCap=Math.max(30,Number(data.history_seconds_capacity||data.history_capacity)||600),archiveCap=Math.max(60,Number(data.history_minutes_capacity)||600),archiveIntervalMs=Math.max(1000,Number(data.history_minutes_interval_ms)||10000),rawChartPts=Number(data.chart_point_limit)||300,inaAvg=Math.max(1,Number(data.ina_averaging_samples)||1),inaBusUs=Math.max(140,Number(data.ina_bus_conv_us)||140),inaShuntUs=Math.max(140,Number(data.ina_shunt_conv_us)||140),theoryHz=Number(data.ina_estimated_channel_hz)||0,measuredHz=Number(data.sensor_measured_hz)||0,rawEspCapacity=Math.max(1,Number(data.raw_history_capacity)||2048),rawFetchLimit=Math.max(32,Number(data.raw_history_fetch_limit)||256),regHex=data.ina_config_register_hex||'0x7007';historyCapacityMax=Math.max(secondsCap,rawEspCapacity,archiveCap,2000);const chartPts=clampChartPoints(rawChartPts);if(document.activeElement!==document.getElementById('cfg-sensor-poll'))document.getElementById('cfg-sensor-poll').value=sensorPollMs;if(document.activeElement!==document.getElementById('cfg-interval'))document.getElementById('cfg-interval').value=reportMs;if(document.activeElement!==document.getElementById('cfg-history-interval'))document.getElementById('cfg-history-interval').value=historyMs;if(document.activeElement!==document.getElementById('cfg-chart-points'))document.getElementById('cfg-chart-points').value=chartPts;document.getElementById('cfg-ina-avg').value=String(inaAvg);document.getElementById('cfg-ina-bus-us').value=String(inaBusUs);document.getElementById('cfg-ina-shunt-us').value=String(inaShuntUs);runtimeReportMs=reportMs;runtimeSensorPollMs=sensorPollMs;runtimeRawEspCapacity=rawEspCapacity;runtimeRawFetchLimit=rawFetchLimit;runtimeArchiveEspCapacity=archiveCap;runtimeArchiveIntervalMs=archiveIntervalMs;runtimeMeasuredHz=measuredHz;runtimeInaAvg=inaAvg;maxPts=chartPts;setRawPollMs(Math.max(150,Math.min(1000,Math.round(reportMs/4))));document.getElementById('interval-note').textContent='Poll '+sensorPollMs+' ms | Status '+reportMs+' ms | Raw '+rawPollMs+' ms | ESP '+rawEspCapacity+' pts | Raw 10m '+formatHistorySpan(RAW_HISTORY_KEEP_MS)+' | Raw 100m '+formatHistorySpan(ARCHIVE_RAW_KEEP_MS)+' | Trend chart '+chartPts+' pts';document.getElementById('runtime-ina-note').textContent='INA '+regHex+' | avg x'+inaAvg+' | bus '+inaBusUs+' us | shunt '+inaShuntUs+' us | theory '+(theoryHz?theoryHz.toFixed(1):'0.0')+' Hz | measured '+(measuredHz?measuredHz.toFixed(1):'0.0')+' Hz | drag to zoom | lock Y available';renderHistoryFromBrowser()}
+    function renderRuntimeConfig(data){const reportMs=Math.max(200,Number(data.sample_interval_ms)||1000),sensorPollMs=Math.max(1,Number(data.sensor_poll_interval_ms)||1),historyMs=Math.max(10,Number(data.history_interval_ms)||100),secondsCap=Math.max(30,Number(data.history_seconds_capacity||data.history_capacity)||600),archiveCap=Math.max(60,Number(data.history_minutes_capacity)||600),archiveIntervalMs=Math.max(1000,Number(data.history_minutes_interval_ms)||10000),rawChartPts=Number(data.chart_point_limit)||300,inaAvg=Math.max(1,Number(data.ina_averaging_samples)||1),inaBusUs=Math.max(140,Number(data.ina_bus_conv_us)||140),inaShuntUs=Math.max(140,Number(data.ina_shunt_conv_us)||140),theoryHz=Number(data.ina_estimated_channel_hz)||0,measuredHz=Number(data.sensor_measured_hz)||0,rawEspCapacity=Math.max(1,Number(data.raw_history_capacity)||2048),rawFetchLimit=Math.max(32,Number(data.raw_history_fetch_limit)||256),regHex=data.ina_config_register_hex||'0x7007';historyCapacityMax=Math.max(secondsCap,rawEspCapacity,archiveCap,2000);const chartPts=clampChartPoints(rawChartPts);if(document.activeElement!==document.getElementById('cfg-sensor-poll'))document.getElementById('cfg-sensor-poll').value=sensorPollMs;if(document.activeElement!==document.getElementById('cfg-interval'))document.getElementById('cfg-interval').value=reportMs;if(document.activeElement!==document.getElementById('cfg-history-interval'))document.getElementById('cfg-history-interval').value=historyMs;if(document.activeElement!==document.getElementById('cfg-chart-points'))document.getElementById('cfg-chart-points').value=chartPts;document.getElementById('cfg-ina-avg').value=String(inaAvg);document.getElementById('cfg-ina-bus-us').value=String(inaBusUs);document.getElementById('cfg-ina-shunt-us').value=String(inaShuntUs);runtimeReportMs=reportMs;runtimeSensorPollMs=sensorPollMs;runtimeRawEspCapacity=rawEspCapacity;runtimeRawFetchLimit=rawFetchLimit;runtimeArchiveEspCapacity=archiveCap;runtimeArchiveIntervalMs=archiveIntervalMs;runtimeMeasuredHz=measuredHz;runtimeInaAvg=inaAvg;maxPts=chartPts;setRawPollMs(computeRawPollMs());document.getElementById('interval-note').textContent='Poll '+sensorPollMs+' ms | Status '+reportMs+' ms | Raw '+rawPollMs+' ms / '+effectiveRawFetchLimit()+' pts | ESP '+rawEspCapacity+' pts | Raw 10m '+formatHistorySpan(RAW_HISTORY_KEEP_MS)+' | Raw 100m '+formatHistorySpan(ARCHIVE_RAW_KEEP_MS)+' | Trend chart '+chartPts+' pts';document.getElementById('runtime-ina-note').textContent='INA '+regHex+' | avg x'+inaAvg+' | bus '+inaBusUs+' us | shunt '+inaShuntUs+' us | theory '+(theoryHz?theoryHz.toFixed(1):'0.0')+' Hz | measured '+(measuredHz?measuredHz.toFixed(1):'0.0')+' Hz | drag to zoom | lock Y available';renderHistoryFromBrowser()}
+    function maybeFetchMinuteHistory(force){const scale=activeHistoryScale();if(scale.id!=='10min')return;if(rawBrowserHistorySpanMs()>=scale.windowMs||archiveRawSpanMs()>=scale.windowMs)return;fetchArchiveHistory(force)}
     function markFlowFormDirty(){flowFormDirty=true;document.getElementById('save-flow').textContent='Save Flow Thresholds *';document.getElementById('flow-edit-note').textContent='Unsaved flow threshold changes pending.'}
     function clearFlowFormDirty(msg){flowFormDirty=false;flowFormSaving=false;document.getElementById('save-flow').textContent='Save Flow Thresholds';document.getElementById('flow-edit-note').textContent=msg||'Changes save only after pressing the button.'}
     function renderFlowThresholdConfig(data){const solar=Math.max(0,Number(data.solar_active_threshold_mw)||0),load=Math.max(0,Number(data.load_active_threshold_mw)||0),battery=Math.max(0,Number(data.battery_flow_threshold_mw)||0);if(!flowFormDirty&&!flowFormSaving){document.getElementById('flow-solar-threshold').value=solar;document.getElementById('flow-load-threshold').value=load;document.getElementById('flow-battery-threshold').value=battery}document.getElementById('flow-threshold-note').textContent='Active thresholds: solar >= '+solar+' mW | battery >= '+battery+' mW | load >= '+load+' mW'}
@@ -900,8 +906,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function waitForCharts(){const t=setInterval(()=>{if(typeof Chart!=='undefined'){clearInterval(t);registerChartPlugins();charts.power=new Chart(document.getElementById('powerChart').getContext('2d'),mkCfg('Solar Power (mW)','Battery Power (mW)','Load Power (mW)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));charts.voltage=new Chart(document.getElementById('voltageChart').getContext('2d'),mkCfg('Solar Voltage (V)','Battery Voltage (V)','Load Voltage (V)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));charts.current=new Chart(document.getElementById('currentChart').getContext('2d'),mkCfg('Solar Current (mA)','Battery Current (mA)','Load Current (mA)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));chartReady=true;installChartInteractions();updateYAxisLockButton();updateLiveLogsButton();renderHistoryFromBrowser()}},150)}
     function updateFlowEfficiency(d){const a=d.analysis||{},mode=a.analysis_mode||'unavailable',balanceValid=!!a.balance_valid,pctLoad=Math.max(0,Number(a.pct_load)||0),pctBat=Math.max(0,Number(a.pct_bat)||0),pctLoss=Math.max(0,Number(a.pct_loss)||0),showBatterySink=mode==='solar_input'&&pctBat>.05,panel=document.querySelector('.flow-eff');const modeColor=mode==='solar_input'?SOLAR:mode==='battery_input'?BAT_DIS:mode==='mixed_input'?COMBO:MUTED;let effColor=MUTED;setText('flow-eff-mode',analysisModeText(mode),modeColor);if(balanceValid){const eff=Math.max(0,Math.min(100,Number(a.efficiency_pct)||0));effColor=eff>80?BAT:eff>60?SOLAR:WARN;setText('flow-eff-val',eff.toFixed(1)+'%',effColor);setText('flow-eff-loss','Loss '+fmt(a.p_loss_mw,0)+' mW',WARN);document.getElementById('flow-mini-load').style.width=pctLoad.toFixed(1)+'%';document.getElementById('flow-mini-load').style.opacity='1';document.getElementById('flow-mini-loss').style.width=pctLoss.toFixed(1)+'%';document.getElementById('flow-mini-loss').style.opacity='1';if(showBatterySink){document.getElementById('flow-mini-bat').style.width=pctBat.toFixed(1)+'%';document.getElementById('flow-mini-bat').style.opacity='1';setText('flow-mini-bat-txt',pctBat.toFixed(1)+'%',BAT)}else{document.getElementById('flow-mini-bat').style.width='0%';document.getElementById('flow-mini-bat').style.opacity='.14';setText('flow-mini-bat-txt','--',MUTED)}setText('flow-mini-load-txt',pctLoad.toFixed(1)+'%',LOAD);setText('flow-mini-loss-txt',pctLoss.toFixed(1)+'%',WARN);if(panel){panel.style.borderColor=effColor+'55';panel.style.boxShadow='inset 0 0 0 1px rgba(0,0,0,0), 0 0 0 rgba(0,0,0,0)'}}else{setText('flow-eff-val','N/A',MUTED);setText('flow-eff-loss','Loss N/A',MUTED);['flow-mini-load','flow-mini-bat','flow-mini-loss'].forEach(id=>{document.getElementById(id).style.width='0%';document.getElementById(id).style.opacity='.28'});setText('flow-mini-load-txt','--',MUTED);setText('flow-mini-bat-txt','--',MUTED);setText('flow-mini-loss-txt','--',MUTED);if(panel)panel.style.borderColor='var(--border)'}}
     function updateAnalysis(d){const a=d.analysis||{},s=d.solar||{},b=d.battery||{},l=d.load||{},mode=a.analysis_mode||'unavailable',batSigned=Number(d.battery_power_signed_mw)||0,balanceValid=!!a.balance_valid,batteryValid=!!(a.battery_estimate_valid&&b.ok),effArc=document.getElementById('eff-arc');const pctLoad=Math.max(0,Number(a.pct_load)||0),pctBat=Math.max(0,Number(a.pct_bat)||0),pctLoss=Math.max(0,Number(a.pct_loss)||0),showBatterySink=mode==='solar_input'&&pctBat>.05;const modeColor=mode==='solar_input'?SOLAR:mode==='battery_input'?BAT_DIS:mode==='mixed_input'?COMBO:MUTED;let effColor=MUTED;setText('analysis-mode',analysisModeText(mode),modeColor);if(balanceValid){const eff=Math.max(0,Math.min(100,Number(a.efficiency_pct)||0));effColor=eff>80?BAT:eff>60?SOLAR:WARN;effArc.style.strokeDashoffset=(201.1*(1-eff/100)).toFixed(1);effArc.setAttribute('stroke',effColor);setText('eff-pct',eff.toFixed(1)+'%',effColor);document.getElementById('bar-load').style.width=pctLoad.toFixed(1)+'%';document.getElementById('bar-loss').style.width=pctLoss.toFixed(1)+'%';document.getElementById('bar-load').style.opacity='1';document.getElementById('bar-loss').style.opacity='1';if(showBatterySink){document.getElementById('bar-bat').style.width=pctBat.toFixed(1)+'%';document.getElementById('bar-bat').style.opacity='1';setText('leg-bat-pct',pctBat.toFixed(1)+'%')}else{document.getElementById('bar-bat').style.width='0%';document.getElementById('bar-bat').style.opacity='.14';setText('leg-bat-pct','--')}setText('leg-load-pct',pctLoad.toFixed(1)+'%');setText('leg-loss-pct',pctLoss.toFixed(1)+'%');setText('leg-loss-mw',fmt(a.p_loss_mw,0)+' mW',WARN)}else{effArc.style.strokeDashoffset='201.1';effArc.setAttribute('stroke',MUTED);setText('eff-pct','N/A',MUTED);['bar-load','bar-bat','bar-loss'].forEach(id=>{document.getElementById(id).style.width='0%';document.getElementById(id).style.opacity='.28'});setText('leg-load-pct','--');setText('leg-bat-pct','--');setText('leg-loss-pct','--');setText('leg-loss-mw','N/A',MUTED)}setText('leg-load-mw',l.ok?fmt(l.power_mw,0)+' mW':'N/A',l.ok?LOAD:MUTED);setText('leg-bat-mw',b.ok?Math.abs(batSigned).toFixed(0)+' mW':'N/A',b.ok?(batSigned<0?BAT:batSigned>0?BAT_DIS:MUTED):MUTED);document.getElementById('ldot-bat').style.background=b.ok?(batSigned>0?BAT_DIS:BAT):MUTED;setText('an-p-solar',s.ok?fmt(s.power_mw,0)+' mW':'N/A',s.ok?SOLAR:MUTED);setText('an-iv-solar',s.ok?(fmt(s.current_ma,1)+' mA @ '+fmt(s.voltage,2)+' V'):'N/A');setText('an-p-load',l.ok?fmt(l.power_mw,0)+' mW':'N/A',l.ok?LOAD:MUTED);setText('an-iv-load',l.ok?(fmt(l.current_ma,1)+' mA @ '+fmt(l.voltage,2)+' V'):'N/A');let batLabel='Battery N/A',batColor=MUTED,batValue='N/A',batInfo='N/A';if(b.ok){if((d.battery_direction||'unknown')==='charging'){batLabel='Battery Charging';batColor=BAT}else if((d.battery_direction||'unknown')==='discharging'){batLabel='Battery Discharging';batColor=BAT_DIS}else{batLabel='Battery Idle';batColor=MUTED}batValue=fmtSigned(batSigned,0)+' mW';batInfo=fmtSigned(b.current_ma,1)+' mA @ '+fmt(b.voltage,2)+' V'}setText('an-bat-lbl',batLabel);setText('an-p-bat',batValue,batColor);setText('an-iv-bat',batInfo);setText('an-p-loss',balanceValid?fmt(a.p_loss_mw,0)+' mW':'N/A',balanceValid?WARN:MUTED);const dur=Number(a.session_duration_ms)||0,hh=Math.floor(dur/3600000),mm=Math.floor((dur%3600000)/60000),ss=Math.floor((dur%60000)/1000);setText('session-dur',String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0'),'#10b981');setText('s-solar',(Number(a.session_solar_wh)||0).toFixed(3)+' Wh','#f59e0b');setText('s-load',(Number(a.session_load_wh)||0).toFixed(3)+' Wh','#38bdf8');setText('s-bat',(Number(a.session_bat_in_wh!=null?a.session_bat_in_wh:a.session_bat_wh)||0).toFixed(3)+' Wh','#10b981');setText('s-bat-out',(Number(a.session_bat_out_wh)||0).toFixed(3)+' Wh',BAT_DIS);setText('s-loss',(Number(a.session_loss_wh)||0).toFixed(3)+' Wh','#ef4444');if(batteryValid){setText('b-crate',(Number(a.c_rate)||0).toFixed(2)+'C',BAT);document.getElementById('crate-fill').style.width=Math.min(100,(Number(a.c_rate)||0)*100).toFixed(0)+'%';document.getElementById('crate-fill').style.background=BAT;setText('b-full',Number(a.est_full_h)>0?formatHours(a.est_full_h):'N/A',BAT);setText('b-run',Number(a.est_runtime_h)>0?formatHours(a.est_runtime_h):'N/A',SOLAR)}else{setText('b-crate','N/A',MUTED);document.getElementById('crate-fill').style.width='0%';setText('b-full','N/A',MUTED);setText('b-run','N/A',MUTED)}setText('b-cap',(d.battery_capacity_mah||2000)+' mAh','var(--muted)');setText('b-avg-eff',balanceValid?(Number(a.efficiency_pct)||0).toFixed(1)+'%':'N/A',balanceValid?effColor:MUTED)}
-    async function fetchRawHistory(){if(rawFetchBusy)return;rawFetchBusy=true;let statusNote='';try{let loops=0;while(loops<6){const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),2000),url='/api/history/live?after_seq='+rawCursorSeq+'&limit='+runtimeRawFetchLimit,r=await fetch(url,{signal:ctrl.signal});clearTimeout(tid);const data=await r.json();if(data&&data.overflowed)statusNote='Raw buffer gap detected on ESP; browser FIFO history preserved and newest samples appended.';const appended=appendRawHistoryBatch(Array.isArray(data&&data.points)?data.points:[]);if(appended===0&&!data.truncated)break;if(!data.truncated)break;loops++}if(activeHistoryScale().source==='raw'||statusNote)renderHistoryFromBrowser(statusNote||undefined)}catch(e){}finally{rawFetchBusy=false;scheduleRawPoll()}}
-    async function fetchArchiveHistory(force){if(archiveFetchBusy)return;const minAge=Math.max(5000,Math.min(30000,runtimeArchiveIntervalMs));if(!force&&(Date.now()-archiveLastFetchMs)<minAge)return;archiveFetchBusy=true;archiveLastFetchMs=Date.now();try{const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),3000),url='/api/history?view=minutes&limit='+Math.max(60,runtimeArchiveEspCapacity),r=await fetch(url,{signal:ctrl.signal});clearTimeout(tid);const data=await r.json(),points=Array.isArray(data&&data.points)?data.points:[];archiveHistory.length=0;points.forEach(item=>archiveHistory.push(normalizeArchivePoint(item)));if(activeHistoryScale().source==='archive')renderHistoryFromBrowser()}catch(e){}finally{archiveFetchBusy=false}}
+    async function fetchRawHistory(){if(rawFetchBusy)return;rawFetchBusy=true;let statusNote='';const fetchLimit=effectiveRawFetchLimit();try{let loops=0;while(loops<3){const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),2500),url='/api/history/live?after_seq='+rawCursorSeq+'&limit='+fetchLimit,r=await fetch(url,{signal:ctrl.signal});clearTimeout(tid);const data=await r.json();if(data&&data.overflowed)statusNote='Raw buffer gap detected on ESP; browser FIFO history preserved and newest samples appended.';const appended=appendRawHistoryBatch(Array.isArray(data&&data.points)?data.points:[]);if(appended===0||!data.truncated)break;loops++}if(activeHistoryScale().source==='raw'||statusNote)renderHistoryFromBrowser(statusNote||undefined)}catch(e){}finally{rawFetchBusy=false;scheduleRawPoll()}}
+    async function fetchArchiveHistory(force){if(archiveFetchBusy)return;const minAge=Math.max(5000,Math.min(30000,runtimeArchiveIntervalMs));if(!force&&(Date.now()-archiveLastFetchMs)<minAge)return;archiveFetchBusy=true;archiveLastFetchMs=Date.now();try{const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),3000),url='/api/history?view=minutes&limit='+Math.max(60,runtimeArchiveEspCapacity),r=await fetch(url,{signal:ctrl.signal});clearTimeout(tid);const data=await r.json(),points=Array.isArray(data&&data.points)?data.points:[];minuteHistory.length=0;points.forEach(item=>minuteHistory.push(normalizeArchivePoint(item)));if(!archiveHistory.length)renderHistoryFromBrowser()}catch(e){}finally{archiveFetchBusy=false}}
     async function fetchConfig(){
       try{
         const r=await fetch('/api/config');
@@ -921,18 +927,18 @@ const char kDashboardHtml[] PROGMEM = R"dash(
         renderBatteryPresets(c.battery_presets||[]);
         if(document.getElementById('bat-profile-sel'))document.getElementById('bat-profile-sel').value=c.battery_profile_id||'';
         if(document.getElementById('bat-full'))document.getElementById('bat-full').value=Number(c.battery_full_voltage_v||4.2).toFixed(2);
-        if(document.getElementById('bat-empty'))document.getElementById('bat-empty').value=Number(c.battery_empty_voltage_v||3.0).toFixed(2);
+        if(document.getElementById('bat-empty'))document.getElementById('bat-empty').value=Number(c.battery_empty_voltage_v||3.6).toFixed(2);
         if(!serverFormDirty&&!serverFormSaving){
           document.getElementById('srv-key').value='';
           document.getElementById('srv-key-clear').checked=false;
         }
-        setText('bat-profile-line',batteryProfileText(c.battery_profile_label||'Custom',Number(c.battery_full_voltage_v||4.2),Number(c.battery_empty_voltage_v||3.0)));
+        setText('bat-profile-line',batteryProfileText(c.battery_profile_label||'Custom',Number(c.battery_full_voltage_v||4.2),Number(c.battery_empty_voltage_v||3.6)));
         renderInaConfig(c,true);
         renderFlowThresholdConfig(c);
         renderLedPwmConfig(c);
         renderSenderStatus(c);
         setPoll(c.sample_interval_ms||1000);
-        fetchArchiveHistory(true);
+        maybeFetchMinuteHistory(true);
       }catch(e){}
     }
     async function fetchData(){
@@ -961,7 +967,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
         updateArc('arc-bat','arc-bat-txt',batPctValid?batPct:0,0,100,batArcColor,batArcText);
         updateArc('arc-load','arc-load-txt',Number(d.load.voltage)||0,0,12,!loadOk?WARN:(loadActive?LOAD:MUTED));
         setText('bat-pct','Charge: '+(batPctValid?(Math.round(batPct)+'%'):'N/A'),batPctColor);
-        setText('bat-profile-line',batteryProfileText(d.battery_profile_label||'Custom',Number(d.battery_full_voltage_v||4.2),Number(d.battery_empty_voltage_v||3.0)));
+        setText('bat-profile-line',batteryProfileText(d.battery_profile_label||'Custom',Number(d.battery_full_voltage_v||4.2),Number(d.battery_empty_voltage_v||3.6)));
         updateFlow(d.visual_mode||'idle',!!d.solar_active,d.battery_direction||'unknown',loadActive,loadOk,d.solar.power_mw,d.load.power_mw,d.battery_power_signed_mw);
         if(d.analysis)updateFlowEfficiency(d);
         if(d.analysis&&d.load)updateAnalysis(d);
@@ -982,7 +988,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
         if(document.getElementById('b-cap'))document.getElementById('b-cap').textContent=(d.battery_capacity_mah||2000)+' mAh';
         appendTrendHistorySample(d);
         renderRuntimeConfig(d);
-        if(!archiveHistory.length||activeHistoryScale().source==='archive')fetchArchiveHistory(!archiveHistory.length);
+        maybeFetchMinuteHistory(!minuteHistory.length);
         renderWifiConfig(d,false);
         renderInaConfig(d,false);
         renderFlowThresholdConfig(d);
@@ -1460,30 +1466,45 @@ void WebUi::handleLiveHistory_() {
     requestedLimit = rawHistoryBuffer_.capacity();
   }
 
-  String body;
-  body.reserve(384U + requestedLimit * 72U);
-  body += F("{\"sample_mode\":\"sensor_poll_live\",");
-  body += F("\"sample_note\":\"ESP keeps short raw burst; browser keeps and freezes old history.\",");
-  body += F("\"after_seq\":");
-  body += String(afterSequence);
-  body += F(",\"oldest_seq\":");
-  body += String(oldestSequence);
-  body += F(",\"latest_seq\":");
-  body += String(latestSequence);
-  body += F(",\"capacity\":");
-  body += String(static_cast<unsigned long>(rawHistoryBuffer_.capacity()));
-  body += F(",\"available_count\":");
-  body += String(static_cast<unsigned long>(availableCount));
-
   const bool overflowed = afterSequence != 0U && oldestSequence != 0U && afterSequence < (oldestSequence - 1U);
-  body += F(",\"overflowed\":");
-  body += overflowed ? F("true") : F("false");
+  size_t startIndex = 0U;
+  if (availableCount > 0U) {
+    if (afterSequence >= latestSequence) {
+      startIndex = availableCount;
+    } else if (afterSequence >= oldestSequence) {
+      const uint32_t offset = afterSequence - oldestSequence + 1U;
+      startIndex = offset < availableCount ? static_cast<size_t>(offset) : availableCount;
+    }
+  }
+
+  server_.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server_.send(200, "application/json", "");
+
+  String chunk;
+  chunk.reserve(320);
+  chunk += F("{\"sample_mode\":\"sensor_poll_live\",");
+  chunk += F("\"sample_note\":\"ESP keeps short raw burst; browser keeps and freezes old history.\",");
+  chunk += F("\"after_seq\":");
+  chunk += String(afterSequence);
+  chunk += F(",\"oldest_seq\":");
+  chunk += String(oldestSequence);
+  chunk += F(",\"latest_seq\":");
+  chunk += String(latestSequence);
+  chunk += F(",\"capacity\":");
+  chunk += String(static_cast<unsigned long>(rawHistoryBuffer_.capacity()));
+  chunk += F(",\"available_count\":");
+  chunk += String(static_cast<unsigned long>(availableCount));
+  chunk += F(",\"overflowed\":");
+  chunk += overflowed ? F("true") : F("false");
+  chunk += F(",\"points\":[");
+  server_.sendContent(chunk);
 
   size_t emittedCount = 0U;
   bool truncated = false;
-  body += F(",\"points\":[");
   bool firstPoint = true;
-  for (size_t index = 0; index < availableCount; ++index) {
+  String item;
+  item.reserve(160);
+  for (size_t index = startIndex; index < availableCount; ++index) {
     RawHistoryPoint point;
     if (!rawHistoryBuffer_.getOrdered(index, point) || point.sequence <= afterSequence) {
       continue;
@@ -1494,42 +1515,42 @@ void WebUi::handleLiveHistory_() {
       break;
     }
 
-    if (!firstPoint) {
-      body += ',';
-    }
+    item = firstPoint ? "" : ",";
     firstPoint = false;
 
-    body += '[';
-    body += String(point.sequence);
-    body += ',';
-    body += String(point.timestampMs);
-    body += ',';
-    body += jsonNumber(point.solarVoltageV);
-    body += ',';
-    body += jsonNumber(point.batteryVoltageV);
-    body += ',';
-    body += jsonNumber(point.loadVoltageV);
-    body += ',';
-    body += jsonNumber(point.solarCurrentMa);
-    body += ',';
-    body += jsonNumber(point.batteryCurrentMa);
-    body += ',';
-    body += jsonNumber(point.loadCurrentMa);
-    body += ']';
+    item += '[';
+    item += String(point.sequence);
+    item += ',';
+    item += String(point.timestampMs);
+    item += ',';
+    item += jsonNumber(point.solarVoltageV);
+    item += ',';
+    item += jsonNumber(point.batteryVoltageV);
+    item += ',';
+    item += jsonNumber(point.loadVoltageV);
+    item += ',';
+    item += jsonNumber(point.solarCurrentMa);
+    item += ',';
+    item += jsonNumber(point.batteryCurrentMa);
+    item += ',';
+    item += jsonNumber(point.loadCurrentMa);
+    item += ']';
+    server_.sendContent(item);
     ++emittedCount;
   }
 
-  body += F("],\"count\":");
-  body += String(static_cast<unsigned long>(emittedCount));
-  body += F(",\"truncated\":");
-  body += truncated ? F("true") : F("false");
-  body += F(",\"measured_hz\":");
-  body += jsonNumber(sensors_.measuredReadRateHz(), 2U);
-  body += F(",\"estimated_hz\":");
-  body += jsonNumber(sensors_.timingProfile().estimatedChannelRateHz, 2U);
-  body += '}';
-
-  server_.send(200, "application/json", body);
+  String tail;
+  tail.reserve(128);
+  tail += F("],\"count\":");
+  tail += String(static_cast<unsigned long>(emittedCount));
+  tail += F(",\"truncated\":");
+  tail += truncated ? F("true") : F("false");
+  tail += F(",\"measured_hz\":");
+  tail += jsonNumber(sensors_.measuredReadRateHz(), 2U);
+  tail += F(",\"estimated_hz\":");
+  tail += jsonNumber(sensors_.timingProfile().estimatedChannelRateHz, 2U);
+  tail += '}';
+  server_.sendContent(tail);
 }
 
 void WebUi::handleSaveIna_() {

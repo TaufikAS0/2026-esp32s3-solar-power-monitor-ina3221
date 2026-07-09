@@ -26,7 +26,7 @@ struct TelemetryFrame {
   float batteryPercent = 0.0f;
   uint32_t sampleIntervalMs = 1000;
   uint32_t batteryFullMv = 4200;
-  uint32_t batteryEmptyMv = 3000;
+  uint32_t batteryEmptyMv = Config::kDefaultBatteryEmptyMv;
   char deviceId[48] = {0};
   char lineId[48] = {0};
   char batteryProfileId[32] = {0};

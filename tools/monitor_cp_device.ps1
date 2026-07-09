@@ -107,8 +107,8 @@ function Invoke-LiveHistoryBurst {
     param(
         [string]$DeviceIp,
         [uint32]$AfterSequence,
-        [int]$Limit = 128,
-        [int]$MaxLoops = 16
+        [int]$Limit = 512,
+        [int]$MaxLoops = 4
     )
 
     $cursor = [uint32]$AfterSequence
