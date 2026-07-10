@@ -11,6 +11,7 @@
 #include "raw_history_buffer.h"
 #include "analysis_engine.h"
 #include "ota_service.h"
+#include "serial_pin_control.h"
 #include "system_state.h"
 #include "wifi_service.h"
 
@@ -23,6 +24,7 @@ public:
         LedPwmController& ledPwmController,
         AnalysisSnapshot& analysis,
         I2cScanner& i2cScanner,
+        SerialPinControl& serialPinControl,
         RawHistoryBuffer& rawHistoryBuffer,
         HistoryBuffer& historyBuffer,
         HistoryBuffer& minuteHistoryBuffer,
@@ -40,6 +42,7 @@ private:
   LedPwmController& ledPwmController_;
   AnalysisSnapshot& analysis_;
   I2cScanner& i2cScanner_;
+  SerialPinControl& serialPinControl_;
   RawHistoryBuffer& rawHistoryBuffer_;
   HistoryBuffer& historyBuffer_;
   HistoryBuffer& minuteHistoryBuffer_;
@@ -63,6 +66,7 @@ private:
   void handleSaveRuntime_();
   void handleSaveLedPwm_();
   void handleControlLedPwm_();
+  void handleControlSerialPin_();
   void handleSaveBattery_();
   void handleAnalysisReset_();
   void handleReboot_();

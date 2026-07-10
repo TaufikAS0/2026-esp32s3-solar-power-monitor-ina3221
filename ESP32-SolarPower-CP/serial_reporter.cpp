@@ -73,7 +73,9 @@ void SerialReporter::update(uint32_t nowMs,
                             const BackendSenderRuntime& backendRuntime,
                             const InaReading& solar,
                             const InaReading& battery,
-                            PowerSystemState state) {
+                            PowerSystemState state,
+                            uint8_t controlPin,
+                            bool controlPinHigh) {
   lastReportMs_ = nowMs;
   const WifiRuntime& wifiRuntime = wifiService.runtime();
 
@@ -112,6 +114,10 @@ void SerialReporter::update(uint32_t nowMs,
     Serial.print(F(" http="));
     Serial.print(backendRuntime.lastHttpStatus);
   }
+  Serial.print(F(" ctrl_gpio"));
+  Serial.print(controlPin);
+  Serial.print(F("="));
+  Serial.print(controlPinHigh ? F("ON") : F("OFF"));
 
   Serial.print(F(" | solar Bus="));
   Serial.print(solar.busVoltageV, 2);

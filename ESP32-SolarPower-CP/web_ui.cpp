@@ -228,6 +228,12 @@ void appendLedPwmConfig(JsonObject object,
   object["led_pwm_signal_duty_percent"] = runtime.signalDutyPercent;
 }
 
+void appendSerialPinControlStatus(JsonObject object, const SerialPinControl& serialPinControl) {
+  object["control_pin_gpio"] = serialPinControl.pin();
+  object["control_pin_state"] = serialPinControl.stateText();
+  object["control_pin_state_high"] = serialPinControl.isHigh();
+}
+
 bool argIsTruthy(const String& value) {
   return value == "1" || value == "true" || value == "on" || value == "yes";
 }
@@ -550,16 +556,25 @@ const char kDashboardHtml[] PROGMEM = R"dash(
         <div class="sub" id="history-mode-note">Grid view: waiting for runtime config...</div>
         <div class="sub" id="history-source-note">History will be stored in this browser to keep ESP load light.</div>
       </div>
-      <div class="chart-view-switch">
-        <button class="chart-mode-btn active" id="history-live-logs" type="button">Live Logs</button>
-        <button class="chart-mode-btn active" type="button" data-history-scale="1s">1s</button>
-        <button class="chart-mode-btn" type="button" data-history-scale="3s">3s</button>
-        <button class="chart-mode-btn" type="button" data-history-scale="10s">10s</button>
-        <button class="chart-mode-btn" type="button" data-history-scale="1min">1min</button>
-        <button class="chart-mode-btn" type="button" data-history-scale="10min">10min</button>
-        <button class="chart-mode-btn" id="history-lock-y" type="button">Lock Y-Axis</button>
-        <button class="chart-mode-btn" id="history-clear-browser" type="button">Clear Browser History</button>
-      </div>
+      <div class="sub" id="history-stable-note" style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card2)">Stable mode aktif. Raw live logs dimatikan agar web UI lebih ringan. Buka Advanced Inspect jika perlu raw FIFO dan zoom detail.</div>
+      <details id="history-advanced-panel" style="border:1px solid var(--border);border-radius:12px;background:#0a1220;padding:10px 12px">
+        <summary style="cursor:pointer;color:var(--text);font-size:13px">Advanced Inspect</summary>
+        <div class="sub" style="margin:10px 0">Gunakan hanya saat inspeksi detail. Fitur ini akan mengaktifkan polling raw live history sehingga lebih berat untuk ESP dan browser.</div>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:var(--bg-card)">
+          <input type="checkbox" id="history-advanced-enable" style="accent-color:var(--blue);width:18px;height:18px;flex:0 0 18px">
+          <span class="sub">Enable raw live logs and zoom inspect</span>
+        </label>
+        <div class="chart-view-switch" id="history-advanced-controls" style="display:none">
+          <button class="chart-mode-btn" id="history-live-logs" type="button">Raw Live Logs</button>
+          <button class="chart-mode-btn" type="button" data-history-scale="1s">1s</button>
+          <button class="chart-mode-btn" type="button" data-history-scale="3s">3s</button>
+          <button class="chart-mode-btn" type="button" data-history-scale="10s">10s</button>
+          <button class="chart-mode-btn" type="button" data-history-scale="1min">1min</button>
+          <button class="chart-mode-btn" type="button" data-history-scale="10min">10min</button>
+          <button class="chart-mode-btn" id="history-lock-y" type="button">Lock Y-Axis</button>
+          <button class="chart-mode-btn" id="history-clear-browser" type="button">Clear Browser History</button>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -789,6 +804,18 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     </div>
 
     <div class="card">
+      <div class="lbl">GPIO Live Output</div>
+      <div class="sub" style="margin-bottom:10px">Kontrol pin helper langsung dari web dashboard. Status ini sama dengan yang muncul di Serial Monitor.</div>
+      <div class="sub" id="ctrl-pin-meta" style="margin-bottom:8px">GPIO17 | Live output control</div>
+      <div class="sub" id="ctrl-pin-state" style="margin-bottom:10px">State: OFF / LOW</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <button class="btn-primary" id="ctrl-pin-on" type="button">Set HIGH / ON</button>
+        <button class="btn-secondary" id="ctrl-pin-off" type="button">Set LOW / OFF</button>
+      </div>
+      <div class="sub" id="ctrl-pin-note" style="margin-top:8px;color:var(--muted)">Live only. Boot default tetap LOW.</div>
+    </div>
+
+    <div class="card">
       <div class="lbl">Backend Sender</div>
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:#0a1220">
         <input type="checkbox" id="srv-enable" style="accent-color:var(--blue);width:18px;height:18px;flex:0 0 18px">
@@ -833,8 +860,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
   </div>
 
   <script>
-    let maxPts=300,chartReady=false,lastUpdate=Date.now(),lastConfigRefreshMs=0,pollMs=1000,pollTimer=null,rawPollMs=900,rawPollTimer=null,rawFetchBusy=false,archiveFetchBusy=false,archiveLastFetchMs=0,rawCursorSeq=0,batteryPresets=[],serverFormDirty=false,serverFormSaving=false,flowFormDirty=false,flowFormSaving=false,ledFormDirty=false,ledFormSaving=false,ledLiveTimer=null,ledSaveTimer=null,historyScale='1s',historyCapacityMax=600,runtimeReportMs=1000,runtimeSensorPollMs=1,runtimeRawEspCapacity=2048,runtimeRawFetchLimit=256,runtimeArchiveEspCapacity=600,runtimeArchiveIntervalMs=10000,runtimeMeasuredHz=0,runtimeInaAvg=1,viewFollowLive=true,viewStartMs=0,viewEndMs=0,yAxisLocked=false,archiveRawBucket=null;
-    const charts={},trendHistory=[],archiveHistory=[],minuteHistory=[],rawHistory=[],SOLAR='#f59e0b',BAT='#10b981',BAT_DIS='#ef4444',COMBO='#a855f7',MUTED='#4a6080',WARN='#ef4444',LOAD='#38bdf8',TREND_HISTORY_LIMIT=1800,RAW_HISTORY_KEEP_MS=600000,ARCHIVE_RAW_KEEP_MS=6000000,ARCHIVE_RAW_BUCKET_MS=1000,MAX_BROWSER_RAW_FETCH_LIMIT=256,HISTORY_SCALE_KEY='solarMonitorHistoryScaleV1',HISTORY_SCALES={s1:{id:'1s',label:'1s',gridMs:1000,windowMs:10000,source:'raw'},s3:{id:'3s',label:'3s',gridMs:3000,windowMs:30000,source:'raw'},s10:{id:'10s',label:'10s',gridMs:10000,windowMs:100000,source:'raw'},m1:{id:'1min',label:'1min',gridMs:60000,windowMs:600000,source:'raw'},m10:{id:'10min',label:'10min',gridMs:600000,windowMs:6000000,source:'raw'}},yAxisRanges={power:null,voltage:null,current:null},lastRendered={points:[],viewStartMs:0,viewEndMs:0,sourceMode:'raw-live',scaleId:'1s'},zoomSelection={active:false,chartId:'',startPx:0,endPx:0};
+    let maxPts=300,chartReady=false,lastUpdate=Date.now(),lastConfigRefreshMs=0,pollMs=1000,pollTimer=null,rawPollMs=900,rawPollTimer=null,rawFetchBusy=false,archiveFetchBusy=false,archiveLastFetchMs=0,rawCursorSeq=0,batteryPresets=[],serverFormDirty=false,serverFormSaving=false,flowFormDirty=false,flowFormSaving=false,ledFormDirty=false,ledFormSaving=false,ledLiveTimer=null,ledSaveTimer=null,historyScale='1min',historyCapacityMax=600,runtimeReportMs=1000,runtimeSensorPollMs=1,runtimeRawEspCapacity=2048,runtimeRawFetchLimit=256,runtimeArchiveEspCapacity=600,runtimeArchiveIntervalMs=10000,runtimeMeasuredHz=0,runtimeInaAvg=1,viewFollowLive=true,viewStartMs=0,viewEndMs=0,yAxisLocked=false,archiveRawBucket=null,advancedRawInspect=false;
+    const charts={},trendHistory=[],archiveHistory=[],minuteHistory=[],rawHistory=[],SOLAR='#f59e0b',BAT='#10b981',BAT_DIS='#ef4444',COMBO='#a855f7',MUTED='#4a6080',WARN='#ef4444',LOAD='#38bdf8',TREND_HISTORY_LIMIT=1800,RAW_HISTORY_KEEP_MS=600000,ARCHIVE_RAW_KEEP_MS=6000000,ARCHIVE_RAW_BUCKET_MS=1000,MAX_BROWSER_RAW_FETCH_LIMIT=256,HISTORY_SCALE_KEY='solarMonitorHistoryScaleV1',HISTORY_SCALES={s1:{id:'1s',label:'1s',gridMs:1000,windowMs:10000,source:'raw'},s3:{id:'3s',label:'3s',gridMs:3000,windowMs:30000,source:'raw'},s10:{id:'10s',label:'10s',gridMs:10000,windowMs:100000,source:'raw'},m1:{id:'1min',label:'1min',gridMs:60000,windowMs:600000,source:'raw'},m10:{id:'10min',label:'10min',gridMs:600000,windowMs:6000000,source:'raw'}},yAxisRanges={power:null,voltage:null,current:null},lastRendered={points:[],viewStartMs:0,viewEndMs:0,sourceMode:'trend-archive',scaleId:'1min'},zoomSelection={active:false,chartId:'',startPx:0,endPx:0};
     function pad2(v){v=Math.max(0,Math.floor(Number(v)||0));return String(v).padStart(2,'0')}
     function pad3(v){v=Math.max(0,Math.floor(Number(v)||0));return String(v).padStart(3,'0')}
     function formatClockMs(ms){const d=new Date(Number(ms)||Date.now());return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds())+'.'+pad3(d.getMilliseconds())}
@@ -856,11 +883,15 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function effectiveRawFetchLimit(){const predicted=Math.ceil((measuredRawHz()*Math.max(500,rawPollMs)/1000)*1.35),serverCap=Math.max(128,Number(runtimeRawFetchLimit)||128),hardCap=Math.max(128,Math.min(runtimeRawEspCapacity,MAX_BROWSER_RAW_FETCH_LIMIT,serverCap)),target=Math.max(128,predicted);return Math.max(128,Math.min(hardCap,Math.ceil(target/32)*32))}
     function saveHistoryScale(){try{localStorage.setItem(HISTORY_SCALE_KEY,historyScale)}catch(e){}}
     function loadHistoryScale(){try{const stored=localStorage.getItem(HISTORY_SCALE_KEY);if(stored==='1s'||stored==='3s'||stored==='10s'||stored==='1min'||stored==='10min')historyScale=stored}catch(e){}}
+    function normalizeHistoryScaleForStableMode(){if(!advancedRawInspect&&(historyScale==='1s'||historyScale==='3s'||historyScale==='10s'))historyScale='1min'}
+    function stopRawPolling(){if(rawPollTimer)clearTimeout(rawPollTimer);rawPollTimer=null}
+    function updateAdvancedInspectUi(){const toggle=document.getElementById('history-advanced-enable'),controls=document.getElementById('history-advanced-controls'),panel=document.getElementById('history-advanced-panel');if(toggle)toggle.checked=advancedRawInspect;if(controls)controls.style.display=advancedRawInspect?'flex':'none';if(panel&&advancedRawInspect)panel.open=true}
+    function setAdvancedInspect(enabled,note){advancedRawInspect=!!enabled;updateAdvancedInspectUi();if(!advancedRawInspect){stopRawPolling();rawFetchBusy=false;rawHistory.length=0;archiveHistory.length=0;rawCursorSeq=0;archiveRawBucket=null;viewFollowLive=true;normalizeHistoryScaleForStableMode();saveHistoryScale();renderHistoryFromBrowser(note||'Stable cached view active. Raw live logs are off.');return}viewFollowLive=true;rawHistory.length=0;archiveHistory.length=0;rawCursorSeq=0;archiveRawBucket=null;renderHistoryFromBrowser(note||'Advanced inspect enabled. Waiting for raw live logs...');fetchRawHistory()}
     function lowerBoundByTime(points,targetMs){let lo=0,hi=points.length;while(lo<hi){const mid=(lo+hi)>>1;if((Number(points[mid].t)||0)<targetMs)lo=mid+1;else hi=mid}return lo}
     function pruneTimedHistory(list,minTimestampMs){const cut=lowerBoundByTime(list,minTimestampMs);if(cut>0)list.splice(0,cut)}
-    function clearBrowserHistory(){trendHistory.length=0;archiveHistory.length=0;minuteHistory.length=0;rawHistory.length=0;rawCursorSeq=0;archiveLastFetchMs=0;archiveRawBucket=null;viewFollowLive=true;viewStartMs=0;viewEndMs=0;renderHistoryFromBrowser('Browser RAM cleared. Waiting for new live samples...')}
-    function updateLiveLogsButton(){const button=document.getElementById('history-live-logs');if(!button)return;button.classList.toggle('active',viewFollowLive);button.textContent=viewFollowLive?'Live Logs ON':'Live Logs'}
-    function activateLiveLogs(note){viewFollowLive=true;viewStartMs=0;viewEndMs=0;renderHistoryFromBrowser(note||'Live logs mode enabled.')}
+    function clearBrowserHistory(){trendHistory.length=0;archiveHistory.length=0;minuteHistory.length=0;rawHistory.length=0;rawCursorSeq=0;archiveLastFetchMs=0;archiveRawBucket=null;viewFollowLive=true;viewStartMs=0;viewEndMs=0;renderHistoryFromBrowser(advancedRawInspect?'Browser RAM cleared. Waiting for new raw live samples...':'Browser cache cleared. Waiting for stable samples...')}
+    function updateLiveLogsButton(){const button=document.getElementById('history-live-logs');if(!button)return;button.classList.toggle('active',advancedRawInspect&&viewFollowLive);button.disabled=!advancedRawInspect;button.textContent=advancedRawInspect?(viewFollowLive?'Raw Live Logs ON':'Raw Live Logs'):'Raw Live Logs OFF'}
+    function activateLiveLogs(note){viewFollowLive=true;viewStartMs=0;viewEndMs=0;if(!advancedRawInspect){renderHistoryFromBrowser(note||'Stable cached view active. Advanced inspect is off.');return}renderHistoryFromBrowser(note||'Raw live logs mode enabled.')}
     function resetHistoryZoom(note){activateLiveLogs(note||'Zoom reset to live logs.')}
     function chartByCanvasId(id){if(id==='powerChart')return charts.power;if(id==='voltageChart')return charts.voltage;if(id==='currentChart')return charts.current;return null}
     function canvasEventPoint(ev,chart){const canvas=chart&&chart.canvas?chart.canvas:ev.currentTarget,rect=canvas.getBoundingClientRect(),chartWidth=chart&&Number(chart.width)?Number(chart.width):rect.width,chartHeight=chart&&Number(chart.height)?Number(chart.height):rect.height,scaleX=chartWidth/Math.max(1,rect.width),scaleY=chartHeight/Math.max(1,rect.height);return{x:(ev.clientX-rect.left)*scaleX,y:(ev.clientY-rect.top)*scaleY}}
@@ -870,12 +901,12 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function beginChartSelection(ev){const chart=chartByCanvasId(ev.currentTarget.id);if(!chartEventInPlot(ev,chart))return;zoomSelection.active=true;zoomSelection.chartId=ev.currentTarget.id;zoomSelection.startPx=canvasPixelX(ev);zoomSelection.endPx=zoomSelection.startPx;if(chart)chart.draw()}
     function moveChartSelection(ev){if(!zoomSelection.active||zoomSelection.chartId!==ev.currentTarget.id)return;zoomSelection.endPx=canvasPixelX(ev);const chart=chartByCanvasId(zoomSelection.chartId);if(chart)chart.draw()}
     function endChartSelection(){if(!zoomSelection.active)return;const chartId=zoomSelection.chartId,chart=chartByCanvasId(chartId),left=Math.min(zoomSelection.startPx,zoomSelection.endPx),right=Math.max(zoomSelection.startPx,zoomSelection.endPx);zoomSelection.active=false;zoomSelection.chartId='';if(chart)chart.draw();if(!chart||right-left<10||!lastRendered.viewEndMs)return;const xScale=chart.scales.x,relStart=xScale.getValueForPixel(left),relEnd=xScale.getValueForPixel(right),startMs=lastRendered.viewEndMs+Math.min(relStart,relEnd)*1000,endMs=lastRendered.viewEndMs+Math.max(relStart,relEnd)*1000;if(!Number.isFinite(startMs)||!Number.isFinite(endMs)||endMs-startMs<50)return;viewFollowLive=false;viewStartMs=startMs;viewEndMs=endMs;renderHistoryFromBrowser('Zoom '+formatHistorySpan(endMs-startMs)+' selected.')}
-    function installChartInteractions(){['powerChart','voltageChart','currentChart'].forEach(id=>{const canvas=document.getElementById(id);if(!canvas||canvas.dataset.zoomReady==='1')return;canvas.dataset.zoomReady='1';canvas.addEventListener('mousedown',beginChartSelection);canvas.addEventListener('mousemove',moveChartSelection);canvas.addEventListener('dblclick',()=>activateLiveLogs('Live logs restored from chart double-click.'))});if(!window.__solarChartSelectionHooked){window.__solarChartSelectionHooked=true;window.addEventListener('mouseup',endChartSelection)}}
-    function sourceModeLabel(mode){if(mode==='raw-live')return'raw burst';if(mode==='raw-cache')return'raw cache';if(mode==='archive-raw')return'raw fifo';if(mode==='minute-cache')return'cached hist';return'device fallback'}
+    function installChartInteractions(){['powerChart','voltageChart','currentChart'].forEach(id=>{const canvas=document.getElementById(id);if(!canvas||canvas.dataset.zoomReady==='1')return;canvas.dataset.zoomReady='1';canvas.addEventListener('mousedown',beginChartSelection);canvas.addEventListener('mousemove',moveChartSelection);canvas.addEventListener('dblclick',()=>activateLiveLogs(advancedRawInspect?'Raw live logs restored from chart double-click.':'Stable live view restored.'))});if(!window.__solarChartSelectionHooked){window.__solarChartSelectionHooked=true;window.addEventListener('mouseup',endChartSelection)}}
+    function sourceModeLabel(mode){if(mode==='raw-live')return'raw burst';if(mode==='raw-cache')return'raw cache';if(mode==='archive-raw')return'raw fifo';if(mode==='minute-cache')return'cached hist';if(mode==='trend-archive')return'cached trend';return'device fallback'}
     function rawSourceCovers(startMs,endMs){return rawHistory.length&&Number(rawHistory[0].t)<=startMs&&Number(rawHistory[rawHistory.length-1].t)>=endMs}
     function archiveSourceCovers(startMs,endMs){return archiveHistory.length&&Number(archiveHistory[0].t)<=startMs&&Number(archiveHistory[archiveHistory.length-1].t)>=endMs}
     function normalizeArchivePoint(item){return{t:Number(item&&item.timestamp_ms)||Date.now(),ps:Number(item&&item.p_solar_mw)||0,pb:Number(item&&item.p_bat_signed_mw!=null?item.p_bat_signed_mw:item&&item.p_bat_mw)||0,pl:Number(item&&item.p_load_mw)||0,vs:Number(item&&item.v_solar_v)||0,vb:Number(item&&item.v_bat_v)||0,vl:Number(item&&item.v_load_v)||0,is:Number(item&&item.i_solar_ma)||0,ib:Number(item&&item.i_bat_ma)||0,il:Number(item&&item.i_load_ma)||0}}
-    function chooseHistorySource(scale,startMs,endMs){if(startMs===0&&endMs===0){if(rawHistory.length)return{points:rawHistory,mode:'raw-live'};if(archiveHistory.length)return{points:archiveHistory,mode:'archive-raw'};if(minuteHistory.length)return{points:minuteHistory,mode:'minute-cache'};if(trendHistory.length)return{points:trendHistory,mode:'trend-archive'};return{points:[],mode:'raw-live'}}if(rawSourceCovers(startMs,endMs))return{points:rawHistory,mode:'raw-cache'};if(archiveSourceCovers(startMs,endMs)||archiveHistory.length)return{points:archiveHistory,mode:'archive-raw'};if(minuteHistory.length)return{points:minuteHistory,mode:'minute-cache'};if(trendHistory.length)return{points:trendHistory,mode:'trend-archive'};return rawHistory.length?{points:rawHistory,mode:'raw-cache'}:{points:[],mode:'raw-live'}}
+    function chooseHistorySource(scale,startMs,endMs){const minutePreferred=scale.id==='10min';if(advancedRawInspect){if(startMs===0&&endMs===0){if(rawHistory.length)return{points:rawHistory,mode:'raw-live'};if(minutePreferred&&archiveHistory.length)return{points:archiveHistory,mode:'archive-raw'}}else{if(rawSourceCovers(startMs,endMs))return{points:rawHistory,mode:'raw-cache'};if(minutePreferred&&(archiveSourceCovers(startMs,endMs)||archiveHistory.length))return{points:archiveHistory,mode:'archive-raw'}}}if(minutePreferred&&minuteHistory.length)return{points:minuteHistory,mode:'minute-cache'};if(trendHistory.length)return{points:trendHistory,mode:'trend-archive'};if(advancedRawInspect&&rawHistory.length)return{points:rawHistory,mode:'raw-cache'};return{points:[],mode:advancedRawInspect?'raw-live':(minutePreferred?'minute-cache':'trend-archive')}}
     function effectiveViewRange(scale,source){if(!source.length){const now=Date.now();return{startMs:now-scale.windowMs,endMs:now}}const sourceStart=Number(source[0].t)||Date.now(),sourceEnd=Number(source[source.length-1].t)||sourceStart;if(viewFollowLive){let endMs=sourceEnd,startMs=endMs-scale.windowMs;if(startMs<sourceStart)startMs=sourceStart;return{startMs:startMs,endMs:endMs}}let startMs=viewStartMs,endMs=viewEndMs;if(!(endMs>startMs)){endMs=Math.max(sourceEnd,sourceStart+scale.windowMs);startMs=endMs-scale.windowMs}const spanMs=Math.max(1,endMs-startMs);if(startMs<sourceStart){startMs=sourceStart;endMs=startMs+spanMs}if(endMs>sourceEnd){endMs=sourceEnd;startMs=endMs-spanMs}if(startMs<sourceStart)startMs=sourceStart;if(endMs<=startMs)endMs=Math.max(sourceEnd,startMs+1);return{startMs:startMs,endMs:endMs}}
     function calcYRange(points,keys){let min=Infinity,max=-Infinity;points.forEach(point=>keys.forEach(key=>{const value=Number(point[key]);if(Number.isFinite(value)){if(value<min)min=value;if(value>max)max=value}}));if(!Number.isFinite(min)||!Number.isFinite(max))return null;if(Math.abs(max-min)<0.0001){const pad=Math.max(1,Math.abs(max)*0.1);min-=pad;max+=pad}else{const pad=(max-min)*0.08;min-=pad;max+=pad}if(min>0&&max>0)min=Math.max(0,min);return{min:min,max:max}}
     function captureYAxisLocks(){if(!lastRendered.points.length)return;yAxisRanges.power=calcYRange(lastRendered.points,['ps','pb','pl']);yAxisRanges.voltage=calcYRange(lastRendered.points,['vs','vb','vl']);yAxisRanges.current=calcYRange(lastRendered.points,['is','ib','il'])}
@@ -889,15 +920,15 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function pushUniqueRawDisplayPoint(target,point){if(!point)return;const last=target.length?target[target.length-1]:null;if(last&&Number(last.seq)===Number(point.seq)&&Number(last.t)===Number(point.t))return;target.push(point)}
     function compactStableRawSamples(points,range,limit){if(points.length<=limit||limit<4)return points.slice();const spanMs=Math.max(1,range&&range.endMs>range.startMs?(range.endMs-range.startMs):((Number(points[points.length-1].t)||Date.now())-(Number(points[0].t)||Date.now()))),bucketBudget=Math.max(1,Math.floor(limit/3)),bucketMs=Math.max(1,Math.ceil(spanMs/bucketBudget)),reduced=[];let bucketStart=0;while(bucketStart<points.length){const bucketId=Math.floor((Number(points[bucketStart].t)||0)/bucketMs);let bucketEnd=bucketStart+1;while(bucketEnd<points.length&&Math.floor((Number(points[bucketEnd].t)||0)/bucketMs)===bucketId)bucketEnd++;const bucketCount=bucketEnd-bucketStart;pushUniqueRawDisplayPoint(reduced,points[bucketStart]);if(bucketCount>2)pushUniqueRawDisplayPoint(reduced,points[bucketStart+Math.floor(bucketCount/2)]);if(bucketCount>1)pushUniqueRawDisplayPoint(reduced,points[bucketEnd-1]);bucketStart=bucketEnd}return reduced.length>limit?downsampleBrowserSamples(reduced,limit):reduced}
     function displaySamplesForScale(points,scale,sourceMode,range){if(sourceUsesStableRaw(sourceMode)){const rawLimit=rawDisplayPointLimit(scale,range);return points.length>rawLimit?compactStableRawSamples(points,range,rawLimit):points.slice()}if(scale.id==='1min'||scale.id==='10min')return points.slice();return points.length>maxPts?downsampleBrowserSamples(points,maxPts):points.slice()}
-    function renderHistoryFromBrowser(noteOverride){const scale=activeHistoryScale(),preferredSource=chooseHistorySource(scale,viewFollowLive?0:viewStartMs,viewFollowLive?0:viewEndMs),baseSource=preferredSource.points;if(!baseSource.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||'Waiting for browser raw history...');return}const viewRange=effectiveViewRange(scale,baseSource),resolvedSource=chooseHistorySource(scale,viewRange.startMs,viewRange.endMs),source=resolvedSource.points;if(!source.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||'Waiting for browser history...');return}const clampedRange=effectiveViewRange(scale,source),startIndex=lowerBoundByTime(source,clampedRange.startMs),endIndex=lowerBoundByTime(source,clampedRange.endMs+1),visible=(startIndex<endIndex?source.slice(startIndex,endIndex):source.slice(Math.max(0,source.length-1))),displayPoints=displaySamplesForScale(visible,scale,resolvedSource.mode,clampedRange),viewEndMsLocal=clampedRange.endMs||Number(source[source.length-1].t)||Date.now(),visibleCount=visible.length,pointSummary=visibleCount!==displayPoints.length?(visibleCount+'->'+displayPoints.length+' pts'):(visibleCount+' pts');lastRendered.points=displayPoints.slice();lastRendered.viewStartMs=clampedRange.startMs;lastRendered.viewEndMs=viewEndMsLocal;lastRendered.sourceMode=resolvedSource.mode;lastRendered.scaleId=scale.id;syncCharts(displayPoints,viewEndMsLocal,scale);let tail=' | cached';if(sourceUsesStableRaw(resolvedSource.mode))tail=(visibleCount!==displayPoints.length?' | stable raw':' | raw fifo')+' | x'+runtimeInaAvg+' | '+(runtimeMeasuredHz>0?runtimeMeasuredHz.toFixed(1):'0.0')+' Hz';const note=noteOverride||('Mode '+(viewFollowLive?'Live':'Zoom')+' | Src '+sourceModeLabel(resolvedSource.mode)+' | '+pointSummary+tail);renderHistoryModeSummary(note)}
-    function renderHistoryModeSummary(noteOverride){const scale=activeHistoryScale(),modeLabel=viewFollowLive?'Live':'Zoom',rangeLabel=!viewFollowLive&&viewEndMs>viewStartMs?(' | Sel '+formatHistorySpan(viewEndMs-viewStartMs)):'';document.querySelectorAll('[data-history-scale]').forEach(btn=>btn.classList.toggle('active',btn.dataset.historyScale===historyScale));updateLiveLogsButton();document.getElementById('history-mode-note').textContent='Mode '+modeLabel+' | '+scale.label+' grid | '+formatHistorySpan(scale.windowMs)+' | ~'+visibleWindowPointEstimate(scale,lastRendered.sourceMode)+' pts'+rangeLabel;document.getElementById('history-source-note').textContent=noteOverride||('Src '+sourceModeLabel(lastRendered.sourceMode)+' | 10m '+formatHistorySpan(rawBrowserHistorySpanMs())+' | 100m '+formatHistorySpan(archiveRawSpanMs())+' | Fetch '+rawPollMs+' ms / '+effectiveRawFetchLimit()+' pts')}
-    function setHistoryScale(view){historyScale=(view==='3s'||view==='10s'||view==='1min'||view==='10min')?view:'1s';if(!viewFollowLive&&viewEndMs>viewStartMs){const scale=activeHistoryScale(),centerMs=(viewStartMs+viewEndMs)/2;viewStartMs=centerMs-(scale.windowMs/2);viewEndMs=centerMs+(scale.windowMs/2)}saveHistoryScale();renderHistoryFromBrowser()}
+    function renderHistoryFromBrowser(noteOverride){const scale=activeHistoryScale(),preferredSource=chooseHistorySource(scale,viewFollowLive?0:viewStartMs,viewFollowLive?0:viewEndMs),baseSource=preferredSource.points;if(!baseSource.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||(advancedRawInspect?'Waiting for browser raw history...':'Waiting for stable cached history...'));return}const viewRange=effectiveViewRange(scale,baseSource),resolvedSource=chooseHistorySource(scale,viewRange.startMs,viewRange.endMs),source=resolvedSource.points;if(!source.length){syncCharts([],Date.now(),scale);renderHistoryModeSummary(noteOverride||(advancedRawInspect?'Waiting for browser history...':'Waiting for cached history...'));return}const clampedRange=effectiveViewRange(scale,source),startIndex=lowerBoundByTime(source,clampedRange.startMs),endIndex=lowerBoundByTime(source,clampedRange.endMs+1),visible=(startIndex<endIndex?source.slice(startIndex,endIndex):source.slice(Math.max(0,source.length-1))),displayPoints=displaySamplesForScale(visible,scale,resolvedSource.mode,clampedRange),viewEndMsLocal=clampedRange.endMs||Number(source[source.length-1].t)||Date.now(),visibleCount=visible.length,pointSummary=visibleCount!==displayPoints.length?(visibleCount+'->'+displayPoints.length+' pts'):(visibleCount+' pts');lastRendered.points=displayPoints.slice();lastRendered.viewStartMs=clampedRange.startMs;lastRendered.viewEndMs=viewEndMsLocal;lastRendered.sourceMode=resolvedSource.mode;lastRendered.scaleId=scale.id;syncCharts(displayPoints,viewEndMsLocal,scale);let tail=' | cached';if(sourceUsesStableRaw(resolvedSource.mode))tail=(visibleCount!==displayPoints.length?' | stable raw':' | raw fifo')+' | x'+runtimeInaAvg+' | '+(runtimeMeasuredHz>0?runtimeMeasuredHz.toFixed(1):'0.0')+' Hz';const note=noteOverride||('Mode '+(advancedRawInspect?(viewFollowLive?'Live':'Zoom'):'Stable')+' | Src '+sourceModeLabel(resolvedSource.mode)+' | '+pointSummary+tail);renderHistoryModeSummary(note)}
+    function renderHistoryModeSummary(noteOverride){const scale=activeHistoryScale(),modeLabel=advancedRawInspect?(viewFollowLive?'Live':'Zoom'):'Stable',rangeLabel=!viewFollowLive&&viewEndMs>viewStartMs?(' | Sel '+formatHistorySpan(viewEndMs-viewStartMs)):'';document.querySelectorAll('[data-history-scale]').forEach(btn=>btn.classList.toggle('active',btn.dataset.historyScale===historyScale));updateLiveLogsButton();document.getElementById('history-stable-note').textContent=advancedRawInspect?'Advanced inspect aktif. Raw FIFO browser cache dan zoom detail sedang berjalan.':'Stable mode aktif. Raw live logs dimatikan agar web UI lebih ringan. Buka Advanced Inspect jika perlu raw FIFO dan zoom detail.';document.getElementById('history-mode-note').textContent='Mode '+modeLabel+' | '+scale.label+' grid | '+formatHistorySpan(scale.windowMs)+' | ~'+visibleWindowPointEstimate(scale,lastRendered.sourceMode)+' pts'+rangeLabel;document.getElementById('history-source-note').textContent=noteOverride||(advancedRawInspect?('Src '+sourceModeLabel(lastRendered.sourceMode)+' | 10m '+formatHistorySpan(rawBrowserHistorySpanMs())+' | 100m '+formatHistorySpan(archiveRawSpanMs())+' | Fetch '+rawPollMs+' ms / '+effectiveRawFetchLimit()+' pts'):('Src '+sourceModeLabel(lastRendered.sourceMode)+' | Raw live logs OFF | Status '+pollMs+' ms'))}
+    function setHistoryScale(view){historyScale=(view==='3s'||view==='10s'||view==='1min'||view==='10min')?view:'1s';normalizeHistoryScaleForStableMode();if(!viewFollowLive&&viewEndMs>viewStartMs){const scale=activeHistoryScale(),centerMs=(viewStartMs+viewEndMs)/2;viewStartMs=centerMs-(scale.windowMs/2);viewEndMs=centerMs+(scale.windowMs/2)}saveHistoryScale();renderHistoryFromBrowser()}
     function flash(id,txt){const el=document.getElementById(id);if(!el)return;el.textContent=txt;el.classList.remove('flashed');void el.offsetWidth;el.classList.add('flashed');setTimeout(()=>el.classList.remove('flashed'),400)}
     function updateArc(arcId,arcTxtId,value,min,max,stroke,labelText){const total=172.8,pct=Math.min(1,Math.max(0,(value-min)/(max-min))),offset=total*(1-pct),arc=document.getElementById(arcId);arc.style.strokeDashoffset=offset;if(stroke)arc.setAttribute('stroke',stroke);document.getElementById(arcTxtId).textContent=labelText!=null?labelText:(Number(value)||0).toFixed(1)+'V'}
     function setPoll(ms){pollMs=Math.max(200,Number(ms)||1000)}
     function setRawPollMs(ms){rawPollMs=Math.max(700,Math.min(1500,Math.round(Number(ms)||1000)))}
     function schedulePoll(){if(pollTimer)clearTimeout(pollTimer);const delay=document.hidden?Math.max(3000,pollMs):pollMs;pollTimer=setTimeout(fetchData,delay)}
-    function scheduleRawPoll(){if(rawPollTimer)clearTimeout(rawPollTimer);const delay=document.hidden?Math.max(1000,rawPollMs):rawPollMs;rawPollTimer=setTimeout(fetchRawHistory,delay)}
+    function scheduleRawPoll(){if(rawPollTimer)clearTimeout(rawPollTimer);if(!advancedRawInspect)return;const delay=document.hidden?Math.max(1000,rawPollMs):rawPollMs;rawPollTimer=setTimeout(fetchRawHistory,delay)}
     function setNode(boxId,textId,stroke,fill){const box=document.getElementById(boxId);box.setAttribute('stroke',stroke);if(fill!==undefined)box.setAttribute('fill',fill);document.getElementById(textId).setAttribute('fill',stroke)}
     function setSvgClass(id,name){document.getElementById(id).setAttribute('class',name)}
     function setSolarVisual(active,ok){const stroke=!ok?WARN:(active?SOLAR:MUTED);const fill=!ok?'#2a0f12':(active?'#1a1f0a':'#101622');document.getElementById('c-solar').className='card'+(!ok?' card-solar-warn':active?' card-solar-on':'');document.getElementById('arc-solar').setAttribute('stroke',stroke);setNode('node-solar-box','node-solar-text',stroke,fill)}
@@ -934,6 +965,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function markLedPwmFormDirty(msg){ledFormDirty=true;document.getElementById('apply-led-pwm').textContent='Save LED PWM Now';document.getElementById('led-pwm-edit-note').textContent=msg||'Live apply active. Applying and auto-saving...'}
     function clearLedPwmFormDirty(msg){ledFormDirty=false;ledFormSaving=false;document.getElementById('apply-led-pwm').textContent='Save LED PWM Now';document.getElementById('led-pwm-edit-note').textContent=msg||'Live control active. Auto-save after you stop sliding.'}
     function renderLedPwmConfig(data){const pin=Number(data.led_pwm_pin)||18,res=Number(data.led_pwm_resolution_bits)||12,freq=Math.max(100,Number(data.led_pwm_frequency_hz)||100),duty=clampLedDuty(data.led_pwm_duty_percent),enabled=!!data.led_pwm_enabled,inverted=!!data.led_pwm_inverted,flashEnabled=!!data.led_pwm_flash_enabled,flashOnMs=clampLedFlashOn(data.led_pwm_flash_on_ms),flashPeriodMs=Math.max(flashOnMs,clampLedFlashPeriod(data.led_pwm_flash_period_ms)),attached=('led_pwm_attached' in data)?!!data.led_pwm_attached:true,signalPct=Number(data.led_pwm_signal_duty_percent),brightnessActive=('led_pwm_brightness_active' in data)?!!data.led_pwm_brightness_active:enabled,flashOutputOn=('led_pwm_flash_output_on' in data)?!!data.led_pwm_flash_output_on:false,flashCycleMs=Math.max(0,Math.round(Number(data.led_pwm_flash_cycle_ms)||0));if(!ledFormDirty&&!ledFormSaving){document.getElementById('led-pwm-enable').checked=enabled;document.getElementById('led-pwm-flash-enable').checked=flashEnabled;document.getElementById('led-pwm-invert').checked=inverted;document.getElementById('led-pwm-freq').value=freq;document.getElementById('led-pwm-duty').value=duty;document.getElementById('led-pwm-duty-num').value=duty;document.getElementById('led-pwm-flash-on').value=flashOnMs;document.getElementById('led-pwm-flash-period').value=flashPeriodMs}document.getElementById('led-pwm-meta').textContent='GPIO'+pin+' | '+res+'-bit | '+freq+' Hz';document.getElementById('led-pwm-duty-note').textContent='Brightness: '+duty+'%';document.getElementById('led-pwm-flash-note').textContent=flashEnabled?('Flashing: '+flashOnMs+' ms ON every '+flashPeriodMs+' ms'):('Flashing off | preset '+flashOnMs+' ms ON every '+flashPeriodMs+' ms');document.getElementById('led-pwm-status').textContent=(enabled?(flashEnabled?'PWM flashing':'PWM active'):'PWM idle')+' | signal '+(Number.isFinite(signalPct)?signalPct.toFixed(1):'--')+'%'+(inverted?' | inverted':'')+(flashEnabled?(' | flash '+(flashOutputOn?'ON':'OFF')+' '+flashCycleMs+'/'+flashPeriodMs+' ms'):'')+(brightnessActive&&!flashEnabled?' | output on':'')+(attached?'':' | attach failed')}
+    function renderSerialPinControl(data){const pin=Number(data.control_pin_gpio)||17,isHigh=!!data.control_pin_state_high,stateText=(data.control_pin_state|| (isHigh?'ON':'OFF'));document.getElementById('ctrl-pin-meta').textContent='GPIO'+pin+' | Live output control';document.getElementById('ctrl-pin-state').textContent='State: '+stateText+' / '+(isHigh?'HIGH':'LOW');document.getElementById('ctrl-pin-state').style.color=isHigh?BAT:MUTED;document.getElementById('ctrl-pin-on').disabled=isHigh;document.getElementById('ctrl-pin-off').disabled=!isHigh;document.getElementById('ctrl-pin-note').textContent=isHigh?'Output aktif HIGH dari GPIO'+pin:'Output idle LOW dari GPIO'+pin}
     function renderSenderStatus(data){const enabled=('backend_sender_enabled' in data)?!!data.backend_sender_enabled:!!data.server_enabled,state=data.backend_sender_state|| (enabled?'idle':'disabled'),depth=Number(data.backend_queue_depth)||0,cap=Number(data.backend_queue_capacity)||32,dropped=Number(data.backend_dropped_samples)||0,retry=Number(data.backend_next_retry_in_ms)||0,http=data.backend_last_http_status?(' | HTTP '+data.backend_last_http_status):'',parts=[state.replace(/_/g,' ')];if(data.backend_last_error)parts.push(data.backend_last_error);if(retry>0)parts.push('retry in '+retry+' ms');if(!serverFormDirty&&!serverFormSaving){document.getElementById('srv-enable').checked=enabled;document.getElementById('srv-base').value=data.api_base||document.getElementById('srv-base').value||'';}document.getElementById('srv-key-note').textContent=data.api_key_configured?'API key stored on device':'API key empty';document.getElementById('srv-status').textContent=parts.join(' | ');document.getElementById('srv-queue').textContent='Queue: '+depth+' / '+cap+' | Dropped: '+dropped+http}
     function pointSeries(points,latestTimestampMs,key){return points.map(p=>({x:(Number(p.t)-latestTimestampMs)/1000,y:Number(p[key])||0,t:Number(p.t)||0,seq:Number(p.seq)||0}))}
     function applyYAxisRange(ch,axisKey){if(!ch)return;const range=yAxisLocked?yAxisRanges[axisKey]:null;if(range){ch.options.scales.y.min=range.min;ch.options.scales.y.max=range.max}else{delete ch.options.scales.y.min;delete ch.options.scales.y.max}}
@@ -942,7 +974,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function waitForCharts(){const t=setInterval(()=>{if(typeof Chart!=='undefined'){clearInterval(t);registerChartPlugins();charts.power=new Chart(document.getElementById('powerChart').getContext('2d'),mkCfg('Solar Power (mW)','Battery Power (mW)','Load Power (mW)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));charts.voltage=new Chart(document.getElementById('voltageChart').getContext('2d'),mkCfg('Solar Voltage (V)','Battery Voltage (V)','Load Voltage (V)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));charts.current=new Chart(document.getElementById('currentChart').getContext('2d'),mkCfg('Solar Current (mA)','Battery Current (mA)','Load Current (mA)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));chartReady=true;installChartInteractions();updateYAxisLockButton();updateLiveLogsButton();renderHistoryFromBrowser()}},150)}
     function updateFlowEfficiency(d){const a=d.analysis||{},mode=a.analysis_mode||'unavailable',balanceValid=!!a.balance_valid,pctLoad=Math.max(0,Number(a.pct_load)||0),pctBat=Math.max(0,Number(a.pct_bat)||0),pctLoss=Math.max(0,Number(a.pct_loss)||0),showBatterySink=mode==='solar_input'&&pctBat>.05,panel=document.querySelector('.flow-eff');const modeColor=mode==='solar_input'?SOLAR:mode==='battery_input'?BAT_DIS:mode==='mixed_input'?COMBO:MUTED;let effColor=MUTED;setText('flow-eff-mode',analysisModeText(mode),modeColor);if(balanceValid){const eff=Math.max(0,Math.min(100,Number(a.efficiency_pct)||0));effColor=eff>80?BAT:eff>60?SOLAR:WARN;setText('flow-eff-val',eff.toFixed(1)+'%',effColor);setText('flow-eff-loss','Loss '+fmt(a.p_loss_mw,0)+' mW',WARN);document.getElementById('flow-mini-load').style.width=pctLoad.toFixed(1)+'%';document.getElementById('flow-mini-load').style.opacity='1';document.getElementById('flow-mini-loss').style.width=pctLoss.toFixed(1)+'%';document.getElementById('flow-mini-loss').style.opacity='1';if(showBatterySink){document.getElementById('flow-mini-bat').style.width=pctBat.toFixed(1)+'%';document.getElementById('flow-mini-bat').style.opacity='1';setText('flow-mini-bat-txt',pctBat.toFixed(1)+'%',BAT)}else{document.getElementById('flow-mini-bat').style.width='0%';document.getElementById('flow-mini-bat').style.opacity='.14';setText('flow-mini-bat-txt','--',MUTED)}setText('flow-mini-load-txt',pctLoad.toFixed(1)+'%',LOAD);setText('flow-mini-loss-txt',pctLoss.toFixed(1)+'%',WARN);if(panel){panel.style.borderColor=effColor+'55';panel.style.boxShadow='inset 0 0 0 1px rgba(0,0,0,0), 0 0 0 rgba(0,0,0,0)'}}else{setText('flow-eff-val','N/A',MUTED);setText('flow-eff-loss','Loss N/A',MUTED);['flow-mini-load','flow-mini-bat','flow-mini-loss'].forEach(id=>{document.getElementById(id).style.width='0%';document.getElementById(id).style.opacity='.28'});setText('flow-mini-load-txt','--',MUTED);setText('flow-mini-bat-txt','--',MUTED);setText('flow-mini-loss-txt','--',MUTED);if(panel)panel.style.borderColor='var(--border)'}}
     function updateAnalysis(d){const a=d.analysis||{},s=d.solar||{},b=d.battery||{},l=d.load||{},mode=a.analysis_mode||'unavailable',batSigned=Number(d.battery_power_signed_mw)||0,balanceValid=!!a.balance_valid,batteryValid=!!(a.battery_estimate_valid&&b.ok),effArc=document.getElementById('eff-arc');const pctLoad=Math.max(0,Number(a.pct_load)||0),pctBat=Math.max(0,Number(a.pct_bat)||0),pctLoss=Math.max(0,Number(a.pct_loss)||0),showBatterySink=mode==='solar_input'&&pctBat>.05;const modeColor=mode==='solar_input'?SOLAR:mode==='battery_input'?BAT_DIS:mode==='mixed_input'?COMBO:MUTED;let effColor=MUTED;setText('analysis-mode',analysisModeText(mode),modeColor);if(balanceValid){const eff=Math.max(0,Math.min(100,Number(a.efficiency_pct)||0));effColor=eff>80?BAT:eff>60?SOLAR:WARN;effArc.style.strokeDashoffset=(201.1*(1-eff/100)).toFixed(1);effArc.setAttribute('stroke',effColor);setText('eff-pct',eff.toFixed(1)+'%',effColor);document.getElementById('bar-load').style.width=pctLoad.toFixed(1)+'%';document.getElementById('bar-loss').style.width=pctLoss.toFixed(1)+'%';document.getElementById('bar-load').style.opacity='1';document.getElementById('bar-loss').style.opacity='1';if(showBatterySink){document.getElementById('bar-bat').style.width=pctBat.toFixed(1)+'%';document.getElementById('bar-bat').style.opacity='1';setText('leg-bat-pct',pctBat.toFixed(1)+'%')}else{document.getElementById('bar-bat').style.width='0%';document.getElementById('bar-bat').style.opacity='.14';setText('leg-bat-pct','--')}setText('leg-load-pct',pctLoad.toFixed(1)+'%');setText('leg-loss-pct',pctLoss.toFixed(1)+'%');setText('leg-loss-mw',fmt(a.p_loss_mw,0)+' mW',WARN)}else{effArc.style.strokeDashoffset='201.1';effArc.setAttribute('stroke',MUTED);setText('eff-pct','N/A',MUTED);['bar-load','bar-bat','bar-loss'].forEach(id=>{document.getElementById(id).style.width='0%';document.getElementById(id).style.opacity='.28'});setText('leg-load-pct','--');setText('leg-bat-pct','--');setText('leg-loss-pct','--');setText('leg-loss-mw','N/A',MUTED)}setText('leg-load-mw',l.ok?fmt(l.power_mw,0)+' mW':'N/A',l.ok?LOAD:MUTED);setText('leg-bat-mw',b.ok?Math.abs(batSigned).toFixed(0)+' mW':'N/A',b.ok?(batSigned<0?BAT:batSigned>0?BAT_DIS:MUTED):MUTED);document.getElementById('ldot-bat').style.background=b.ok?(batSigned>0?BAT_DIS:BAT):MUTED;setText('an-p-solar',s.ok?fmt(s.power_mw,0)+' mW':'N/A',s.ok?SOLAR:MUTED);setText('an-iv-solar',s.ok?(fmt(s.current_ma,1)+' mA @ '+fmt(s.voltage,2)+' V'):'N/A');setText('an-p-load',l.ok?fmt(l.power_mw,0)+' mW':'N/A',l.ok?LOAD:MUTED);setText('an-iv-load',l.ok?(fmt(l.current_ma,1)+' mA @ '+fmt(l.voltage,2)+' V'):'N/A');let batLabel='Battery N/A',batColor=MUTED,batValue='N/A',batInfo='N/A';if(b.ok){if((d.battery_direction||'unknown')==='charging'){batLabel='Battery Charging';batColor=BAT}else if((d.battery_direction||'unknown')==='discharging'){batLabel='Battery Discharging';batColor=BAT_DIS}else{batLabel='Battery Idle';batColor=MUTED}batValue=fmtSigned(batSigned,0)+' mW';batInfo=fmtSigned(b.current_ma,1)+' mA @ '+fmt(b.voltage,2)+' V'}setText('an-bat-lbl',batLabel);setText('an-p-bat',batValue,batColor);setText('an-iv-bat',batInfo);setText('an-p-loss',balanceValid?fmt(a.p_loss_mw,0)+' mW':'N/A',balanceValid?WARN:MUTED);const dur=Number(a.session_duration_ms)||0,hh=Math.floor(dur/3600000),mm=Math.floor((dur%3600000)/60000),ss=Math.floor((dur%60000)/1000);setText('session-dur',String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0'),'#10b981');setText('s-solar',(Number(a.session_solar_wh)||0).toFixed(3)+' Wh','#f59e0b');setText('s-load',(Number(a.session_load_wh)||0).toFixed(3)+' Wh','#38bdf8');setText('s-bat',(Number(a.session_bat_in_wh!=null?a.session_bat_in_wh:a.session_bat_wh)||0).toFixed(3)+' Wh','#10b981');setText('s-bat-out',(Number(a.session_bat_out_wh)||0).toFixed(3)+' Wh',BAT_DIS);setText('s-loss',(Number(a.session_loss_wh)||0).toFixed(3)+' Wh','#ef4444');if(batteryValid){setText('b-crate',(Number(a.c_rate)||0).toFixed(2)+'C',BAT);document.getElementById('crate-fill').style.width=Math.min(100,(Number(a.c_rate)||0)*100).toFixed(0)+'%';document.getElementById('crate-fill').style.background=BAT;setText('b-full',Number(a.est_full_h)>0?formatHours(a.est_full_h):'N/A',BAT);setText('b-run',Number(a.est_runtime_h)>0?formatHours(a.est_runtime_h):'N/A',SOLAR)}else{setText('b-crate','N/A',MUTED);document.getElementById('crate-fill').style.width='0%';setText('b-full','N/A',MUTED);setText('b-run','N/A',MUTED)}setText('b-cap',(d.battery_capacity_mah||2000)+' mAh','var(--muted)');setText('b-avg-eff',balanceValid?(Number(a.efficiency_pct)||0).toFixed(1)+'%':'N/A',balanceValid?effColor:MUTED)}
-    async function fetchRawHistory(){if(rawFetchBusy)return;rawFetchBusy=true;let statusNote='';const fetchLimit=effectiveRawFetchLimit();try{let loops=0;while(loops<2){const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),2500),url='/api/history/live?after_seq='+rawCursorSeq+'&limit='+fetchLimit,r=await fetch(url,{signal:ctrl.signal});clearTimeout(tid);const data=await r.json();if(data&&data.overflowed)statusNote='Raw buffer gap detected on ESP; browser FIFO history preserved and newest samples appended.';const appended=appendRawHistoryBatch(Array.isArray(data&&data.points)?data.points:[]);if(appended===0||!data.truncated)break;loops++}if(activeHistoryScale().source==='raw'||statusNote)renderHistoryFromBrowser(statusNote||undefined)}catch(e){}finally{rawFetchBusy=false;scheduleRawPoll()}}
+    async function fetchRawHistory(){if(!advancedRawInspect){stopRawPolling();return}if(rawFetchBusy)return;rawFetchBusy=true;let statusNote='';const fetchLimit=effectiveRawFetchLimit();try{let loops=0;while(loops<2){const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),2500),url='/api/history/live?after_seq='+rawCursorSeq+'&limit='+fetchLimit,r=await fetch(url,{signal:ctrl.signal});clearTimeout(tid);const data=await r.json();if(data&&data.overflowed)statusNote='Raw buffer gap detected on ESP; browser FIFO history preserved and newest samples appended.';const appended=appendRawHistoryBatch(Array.isArray(data&&data.points)?data.points:[]);if(appended===0||!data.truncated)break;loops++}if(activeHistoryScale().source==='raw'||statusNote)renderHistoryFromBrowser(statusNote||undefined)}catch(e){}finally{rawFetchBusy=false;scheduleRawPoll()}}
     async function fetchArchiveHistory(force){if(archiveFetchBusy)return;const minAge=Math.max(5000,Math.min(30000,runtimeArchiveIntervalMs));if(!force&&(Date.now()-archiveLastFetchMs)<minAge)return;archiveFetchBusy=true;archiveLastFetchMs=Date.now();try{const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),3000),url='/api/history?view=minutes&limit='+Math.max(60,runtimeArchiveEspCapacity),r=await fetch(url,{signal:ctrl.signal});clearTimeout(tid);const data=await r.json(),points=Array.isArray(data&&data.points)?data.points:[];minuteHistory.length=0;points.forEach(item=>minuteHistory.push(normalizeArchivePoint(item)));if(!archiveHistory.length)renderHistoryFromBrowser()}catch(e){}finally{archiveFetchBusy=false}}
     async function fetchConfig(){
       try{
@@ -955,6 +987,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
         document.getElementById('ota-info').textContent='Host: '+(c.ota_hostname||'-')+' | Port: '+(c.ota_port||3232)+' | '+(c.ota_message||'');
         document.getElementById('fw').textContent='Firmware '+(c.firmware_version||'--')+(c.release_label?(' '+c.release_label):'');
         document.getElementById('build-stamp').textContent=c.build_stamp||'--';
+        document.getElementById('ip').textContent=c.ip||'--';
         document.getElementById('hdr-mode').textContent=c.wifi_mode||'--';
         document.getElementById('hdr-device').textContent=c.device_id||'--';
         document.getElementById('hdr-interval').textContent=(c.sample_interval_ms||1000)+' ms report';
@@ -973,6 +1006,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
         renderInaConfig(c,true);
         renderFlowThresholdConfig(c);
         renderLedPwmConfig(c);
+        renderSerialPinControl(c);
         renderSenderStatus(c);
         setPoll(c.sample_interval_ms||1000);
         maybeFetchMinuteHistory(true);
@@ -1015,6 +1049,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
         document.getElementById('flow-detail').textContent=d.sensor_health||'OK';
         document.getElementById('flow-warn').textContent=d.visual_warning||'';
         setBadge(d.state,d.state_label||d.state);
+        renderSerialPinControl(d);
         document.getElementById('hdr-interval').textContent=(d.sample_interval_ms||pollMs)+' ms report';
         appendTrendHistorySample(d);
         maybeFetchMinuteHistory(!minuteHistory.length);
@@ -1039,6 +1074,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     async function applyLedPwmLive(){await applyLedPwmRequest('/api/control/led-pwm','LED PWM applied live',false)}
     async function saveLedPwm(manual){const ok=await applyLedPwmRequest('/api/config/led-pwm',manual?'LED PWM saved':'LED PWM auto-saved',true);if(ok){fetchConfig();fetchData()}}
     function scheduleLedPwmApply(){if(ledLiveTimer)clearTimeout(ledLiveTimer);ledLiveTimer=setTimeout(()=>applyLedPwmLive(),120);if(ledSaveTimer)clearTimeout(ledSaveTimer);ledSaveTimer=setTimeout(()=>saveLedPwm(false),700)}
+    async function applySerialPinState(state){document.getElementById('ctrl-pin-note').textContent='Applying GPIO output...';const body=new URLSearchParams();body.set('state',state);const r=await fetch('/api/control/serial-pin',{method:'POST',body});const d=await r.json();if(!r.ok){document.getElementById('ctrl-pin-note').textContent=d.error||'GPIO output update failed';alert(d.error||'GPIO output update failed');return}renderSerialPinControl(d)}
     async function saveServerConfig(){serverFormSaving=true;document.getElementById('save-server').textContent='Saving Backend Sender...';const body=new URLSearchParams();if(document.getElementById('srv-enable').checked)body.set('server_enabled','1');body.set('api_base',document.getElementById('srv-base').value);const apiKey=document.getElementById('srv-key').value;if(apiKey)body.set('api_key',apiKey);if(document.getElementById('srv-key-clear').checked)body.set('clear_api_key','1');const r=await fetch('/api/config/server',{method:'POST',body});const d=await r.json();if(!r.ok){serverFormSaving=false;document.getElementById('save-server').textContent='Save Backend Sender *';alert(d.error||'Backend sender update failed');return}document.getElementById('srv-key').value='';document.getElementById('srv-key-clear').checked=false;clearServerFormDirty(d.message||'Backend sender updated');alert(d.message||'Backend sender updated');fetchConfig();fetchData()}
     async function saveBatteryProfile(){const body=new URLSearchParams();body.set('battery_profile_id',document.getElementById('bat-profile-sel').value);body.set('battery_full_voltage_v',document.getElementById('bat-full').value);body.set('battery_empty_voltage_v',document.getElementById('bat-empty').value);const r=await fetch('/api/config/battery',{method:'POST',body});const d=await r.json();if(!r.ok){alert(d.error||'Battery profile update failed');return}alert(d.message||'Battery profile saved');fetchConfig();fetchData()}
     async function applyOTA(){const body=new URLSearchParams();if(document.getElementById('ota-en').checked)body.set('ota_enabled','1');const r=await fetch('/api/config/ota',{method:'POST',body});const d=await r.json();alert(d.message||'OTA updated');fetchConfig();fetchData()}
@@ -1046,10 +1082,10 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     async function scanI2C(){const r=await fetch('/api/i2c-scan');const d=await r.json();document.getElementById('i2c-result').textContent=(d.devices||[]).length?(d.devices.map(x=>x.address_hex+' '+x.label).join(' | ')):'No I2C devices detected'}
     window.addEventListener('load',()=>{
       loadHistoryScale();
+      normalizeHistoryScaleForStableMode();
       waitForCharts();
+      setAdvancedInspect(false,'Stable cached view active. Raw live logs are off by default.');
       fetchConfig();
-      renderHistoryFromBrowser('Waiting for browser RAM live logs...');
-      fetchRawHistory();
       fetchData();
       document.addEventListener('visibilitychange',()=>{schedulePoll();scheduleRawPoll()});
       setInterval(()=>{document.getElementById('last-upd').textContent=((Date.now()-lastUpdate)/1000).toFixed(1)+'s ago'},500);
@@ -1062,6 +1098,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
       document.getElementById('save-load-shunt').onclick=()=>saveInaConfig('load');
       document.getElementById('save-flow').onclick=saveFlowConfig;
       document.getElementById('apply-led-pwm').onclick=()=>saveLedPwm(true);
+      document.getElementById('ctrl-pin-on').onclick=()=>applySerialPinState('on');
+      document.getElementById('ctrl-pin-off').onclick=()=>applySerialPinState('off');
       document.getElementById('save-server').onclick=saveServerConfig;
       document.getElementById('save-bat-profile').onclick=saveBatteryProfile;
       document.getElementById('toggle-solar-setup').onclick=()=>document.getElementById('solar-setup').classList.toggle('open');
@@ -1071,6 +1109,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
       document.getElementById('apply-ota').onclick=applyOTA;
       document.getElementById('scan-i2c').onclick=scanI2C;
       document.getElementById('reset-session').onclick=resetSession;
+      document.getElementById('history-advanced-enable').onchange=e=>setAdvancedInspect(!!e.target.checked,!!e.target.checked?'Advanced inspect enabled. Waiting for raw live logs...':'Stable cached view active. Raw live logs turned off.');
+      document.getElementById('history-advanced-panel').ontoggle=e=>{if(!e.target.open&&advancedRawInspect)setAdvancedInspect(false,'Stable cached view restored after closing Advanced Inspect.')};
       document.querySelectorAll('[data-history-scale]').forEach(btn=>btn.onclick=()=>setHistoryScale(btn.dataset.historyScale));
       document.getElementById('history-live-logs').onclick=()=>activateLiveLogs();
       document.getElementById('history-lock-y').onclick=toggleYAxisLock;
@@ -1111,6 +1151,7 @@ WebUi::WebUi(WifiService& wifiService,
              LedPwmController& ledPwmController,
              AnalysisSnapshot& analysis,
              I2cScanner& i2cScanner,
+             SerialPinControl& serialPinControl,
              RawHistoryBuffer& rawHistoryBuffer,
              HistoryBuffer& historyBuffer,
              HistoryBuffer& minuteHistoryBuffer,
@@ -1122,6 +1163,7 @@ WebUi::WebUi(WifiService& wifiService,
       ledPwmController_(ledPwmController),
       analysis_(analysis),
       i2cScanner_(i2cScanner),
+      serialPinControl_(serialPinControl),
       rawHistoryBuffer_(rawHistoryBuffer),
       historyBuffer_(historyBuffer),
       minuteHistoryBuffer_(minuteHistoryBuffer),
@@ -1154,6 +1196,7 @@ void WebUi::registerRoutes_() {
   server_.on("/api/config/runtime", HTTP_POST, [this]() { handleSaveRuntime_(); });
   server_.on("/api/config/led-pwm", HTTP_POST, [this]() { handleSaveLedPwm_(); });
   server_.on("/api/control/led-pwm", HTTP_POST, [this]() { handleControlLedPwm_(); });
+  server_.on("/api/control/serial-pin", HTTP_POST, [this]() { handleControlSerialPin_(); });
   server_.on("/api/config/battery", HTTP_POST, [this]() { handleSaveBattery_(); });
   server_.on("/api/config/ota", HTTP_POST, [this]() { handleSaveOta_(); });
   server_.on("/api/ota", HTTP_POST, [this]() { handleSaveOta_(); });
@@ -1205,6 +1248,7 @@ void WebUi::handleHealth_() {
       healthRoot, config, sensors_, rawHistoryBuffer_, historyBuffer_, minuteHistoryBuffer_);
   appendInaConfig(healthRoot, config);
   appendLedPwmConfig(healthRoot, config, ledPwmController_.runtime());
+  appendSerialPinControlStatus(healthRoot, serialPinControl_);
 
   String body;
   serializeJson(doc, body);
@@ -1249,6 +1293,7 @@ void WebUi::handleStatus_() {
   doc["battery_percent"] = batteryPercent;
   doc["battery_percent_valid"] = batteryPercentValid;
   doc["api_key_configured"] = !config.apiKey.isEmpty();
+  appendSerialPinControlStatus(doc.as<JsonObject>(), serialPinControl_);
   if (!lite) {
     doc["firmware_version"] = FirmwareInfo::kVersion;
     doc["release_label"] = FirmwareInfo::kReleaseLabel;
@@ -1449,6 +1494,7 @@ void WebUi::handleConfig_() {
   appendInaConfig(configRoot, config);
   appendFlowThresholdConfig(configRoot, config);
   appendLedPwmConfig(configRoot, config, ledPwmController_.runtime());
+  appendSerialPinControlStatus(configRoot, serialPinControl_);
   appendBackendSenderStatus(configRoot, backendSender_.runtimeSnapshot());
   JsonArray batteryPresets = doc.createNestedArray("battery_presets");
   appendBatteryPresets(batteryPresets);
@@ -1848,6 +1894,39 @@ void WebUi::handleControlLedPwm_() {
   String body;
   serializeJson(doc, body);
   server_.send(attached ? 200 : 500, "application/json", body);
+}
+
+void WebUi::handleControlSerialPin_() {
+  String stateRaw = server_.arg("state");
+  stateRaw.toLowerCase();
+
+  bool high = false;
+  if (stateRaw == "on" || stateRaw == "high" || stateRaw == "1" || stateRaw == "true") {
+    high = true;
+  } else if (stateRaw == "off" || stateRaw == "low" || stateRaw == "0" || stateRaw == "false") {
+    high = false;
+  } else {
+    server_.send(
+        400,
+        "application/json",
+        "{\"ok\":false,\"error\":\"state must be on/off, high/low, or 1/0\"}");
+    return;
+  }
+
+  serialPinControl_.setHigh(high);
+  Serial.print(F("[serial-pin] web GPIO"));
+  Serial.print(serialPinControl_.pin());
+  Serial.print(F(" -> "));
+  Serial.println(serialPinControl_.stateText());
+
+  DynamicJsonDocument doc(384);
+  doc["ok"] = true;
+  doc["message"] = high ? "GPIO output set HIGH" : "GPIO output set LOW";
+  appendSerialPinControlStatus(doc.as<JsonObject>(), serialPinControl_);
+
+  String body;
+  serializeJson(doc, body);
+  server_.send(200, "application/json", body);
 }
 
 void WebUi::handleSaveBattery_() {

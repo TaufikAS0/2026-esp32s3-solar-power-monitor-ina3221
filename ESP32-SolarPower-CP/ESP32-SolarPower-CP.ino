@@ -9,6 +9,7 @@
 #include "power_logic.h"
 #include "raw_history_buffer.h"
 #include "serial_reporter.h"
+#include "serial_pin_control.h"
 #include "system_state.h"
 #include "web_ui.h"
 #include "wifi_service.h"
@@ -26,6 +27,7 @@ RawHistoryBuffer gRawHistoryBuffer;
 HistoryBuffer gHistoryBuffer;
 HistoryBuffer gMinuteHistoryBuffer;
 SerialReporter gSerialReporter;
+SerialPinControl gSerialPinControl;
 PowerSystemState gCurrentState = PowerSystemState::SensorError;
 OtaService gOtaService(gWifiService);
 BackendSender gBackendSender(gWifiService, gOtaService, gInaSensors, gAnalysis, gCurrentState);
@@ -36,6 +38,7 @@ WebUi gWebUi(gWifiService,
              gLedPwmController,
              gAnalysis,
              gI2cScanner,
+             gSerialPinControl,
              gRawHistoryBuffer,
              gHistoryBuffer,
              gMinuteHistoryBuffer,
@@ -157,6 +160,7 @@ void updateSystemState() {
 
 void setup() {
   gSerialReporter.begin();
+  gSerialPinControl.begin();
   gWifiService.begin();
   gLedPwmController.begin(gWifiService.config());
   gInaSensors.applyConfig(gWifiService.config());
@@ -173,6 +177,7 @@ void setup() {
 void loop() {
   const uint32_t nowMs = millis();
 
+  gSerialPinControl.update();
   gWifiService.update(nowMs);
   gLedPwmController.update(nowMs);
   const uint32_t previousReadMs = gInaSensors.lastReadMs();
@@ -199,7 +204,9 @@ void loop() {
                            backendRuntime,
                            gInaSensors.solar(),
                            gInaSensors.battery(),
-                           gCurrentState);
+                           gCurrentState,
+                           gSerialPinControl.pin(),
+                           gSerialPinControl.isHigh());
   }
   gBackendSender.update(nowMs);
 }

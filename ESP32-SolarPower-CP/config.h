@@ -6,6 +6,7 @@
 namespace Config {
 
 constexpr uint32_t kSerialBaudRate = 115200;
+constexpr uint8_t kSerialControlPin = 17;
 
 // ESP32-S3 target wiring:
 // INA3221 @0x40 with CH1=Solar (5 mOhm), CH2=Battery (5 mOhm), CH3=Load (R010 = 10 mOhm)

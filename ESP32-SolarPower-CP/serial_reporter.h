@@ -16,7 +16,9 @@ public:
               const BackendSenderRuntime& backendRuntime,
               const InaReading& solar,
               const InaReading& battery,
-              PowerSystemState state);
+              PowerSystemState state,
+              uint8_t controlPin,
+              bool controlPinHigh);
 
 private:
   uint32_t lastReportMs_ = 0;
