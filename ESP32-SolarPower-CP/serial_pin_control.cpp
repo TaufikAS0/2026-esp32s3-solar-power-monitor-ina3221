@@ -79,14 +79,25 @@ void SerialPinControl::applyScheduledOff(const DeviceConfig& config,
   }
 
   const int32_t dayKey = buildScheduleDayKey(localTime);
-  if (dayKey == lastScheduleDayKey_) {
-    return;
-  }
-
   const uint32_t currentMinuteOfDay =
       static_cast<uint32_t>(localTime.tm_hour * 60 + localTime.tm_min);
   const uint32_t targetMinuteOfDay = config.controlPinOffHour * 60U + config.controlPinOffMinute;
   if (currentMinuteOfDay < targetMinuteOfDay) {
+    return;
+  }
+
+  if (stateHigh_) {
+    lastScheduleDayKey_ = dayKey;
+    setState_(false);
+    Serial.printf("[serial-pin][%lu] auto OFF schedule %02lu:%02lu local time reached on GPIO%u\n",
+                  static_cast<unsigned long>(nowMs),
+                  static_cast<unsigned long>(config.controlPinOffHour),
+                  static_cast<unsigned long>(config.controlPinOffMinute),
+                  static_cast<unsigned int>(Config::kSerialControlPin));
+    return;
+  }
+
+  if (dayKey == lastScheduleDayKey_) {
     return;
   }
 
@@ -99,13 +110,6 @@ void SerialPinControl::applyScheduledOff(const DeviceConfig& config,
                   static_cast<unsigned int>(Config::kSerialControlPin));
     return;
   }
-
-  setState_(false);
-  Serial.printf("[serial-pin][%lu] auto OFF schedule %02lu:%02lu local time reached on GPIO%u\n",
-                static_cast<unsigned long>(nowMs),
-                static_cast<unsigned long>(config.controlPinOffHour),
-                static_cast<unsigned long>(config.controlPinOffMinute),
-                static_cast<unsigned int>(Config::kSerialControlPin));
 }
 
 uint8_t SerialPinControl::pin() const {
