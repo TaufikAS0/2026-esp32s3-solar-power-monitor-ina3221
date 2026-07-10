@@ -679,10 +679,9 @@ const char kDashboardHtml[] PROGMEM = R"dash(
 
     <div class="card">
       <div class="lbl">Sampling Mode</div>
-      <div class="sub" style="margin-bottom:10px">Pilih preset aman dulu. Mode ini menurunkan beban telemetry dan tetap menjaga raw history browser stabil untuk pemakaian panjang.</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px">
-        <button class="btn-primary" id="apply-sampling-safe-53">Stable 53 Hz</button>
-        <button class="btn-secondary" id="apply-sampling-safe-100">Balanced 100 Hz</button>
+      <div class="sub" style="margin-bottom:10px">Gunakan satu tombol ini untuk mode stabil. Dashboard dan raw fetch dibuat lebih ringan agar sampling lebih dekat ke 60 Hz.</div>
+      <div style="display:grid;grid-template-columns:minmax(220px,1fr);gap:8px;margin-bottom:10px">
+        <button class="btn-primary" id="apply-sampling-stable">Mode Stabil 60 Hz</button>
       </div>
       <div class="sub" id="sampling-profile-line" style="margin-bottom:6px">Mode: --</div>
       <div class="sub" id="sampling-profile-note" style="margin-bottom:6px">--</div>
@@ -692,12 +691,12 @@ const char kDashboardHtml[] PROGMEM = R"dash(
         <div class="sub" style="margin:10px 0">Gunakan hanya untuk eksperimen. Menyimpan preset aman akan menimpa semua field di bawah.</div>
         <div class="sub" style="margin-bottom:6px">Sensor poll interval</div>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-          <input class="inp" id="cfg-sensor-poll" type="number" value="19" min="1" max="60000" style="flex:1">
+          <input class="inp" id="cfg-sensor-poll" type="number" value="16" min="1" max="60000" style="flex:1">
           <span class="sub">ms</span>
         </div>
         <div class="sub" style="margin-bottom:6px">Report / send interval</div>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-          <input class="inp" id="cfg-interval" type="number" value="2000" min="200" max="60000" style="flex:1">
+          <input class="inp" id="cfg-interval" type="number" value="3000" min="200" max="60000" style="flex:1">
           <span class="sub">ms</span>
         </div>
         <div class="sub" style="margin-bottom:6px">History sample interval</div>
@@ -707,7 +706,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
         </div>
         <div class="sub" style="margin-bottom:6px">Chart points shown</div>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
-          <input class="inp" id="cfg-chart-points" type="number" value="120" min="30" max="2000" style="flex:1">
+          <input class="inp" id="cfg-chart-points" type="number" value="90" min="30" max="2000" style="flex:1">
           <span class="sub">pts</span>
         </div>
         <div class="sub" style="margin-bottom:6px">INA averaging</div>
@@ -834,8 +833,8 @@ const char kDashboardHtml[] PROGMEM = R"dash(
   </div>
 
   <script>
-    let maxPts=300,chartReady=false,lastUpdate=Date.now(),pollMs=1000,pollTimer=null,rawPollMs=900,rawPollTimer=null,rawFetchBusy=false,archiveFetchBusy=false,archiveLastFetchMs=0,rawCursorSeq=0,batteryPresets=[],serverFormDirty=false,serverFormSaving=false,flowFormDirty=false,flowFormSaving=false,ledFormDirty=false,ledFormSaving=false,ledLiveTimer=null,ledSaveTimer=null,historyScale='1s',historyCapacityMax=600,runtimeReportMs=1000,runtimeSensorPollMs=1,runtimeRawEspCapacity=2048,runtimeRawFetchLimit=256,runtimeArchiveEspCapacity=600,runtimeArchiveIntervalMs=10000,runtimeMeasuredHz=0,runtimeInaAvg=1,viewFollowLive=true,viewStartMs=0,viewEndMs=0,yAxisLocked=false,archiveRawBucket=null;
-    const charts={},trendHistory=[],archiveHistory=[],minuteHistory=[],rawHistory=[],SOLAR='#f59e0b',BAT='#10b981',BAT_DIS='#ef4444',COMBO='#a855f7',MUTED='#4a6080',WARN='#ef4444',LOAD='#38bdf8',TREND_HISTORY_LIMIT=3600,RAW_HISTORY_KEEP_MS=600000,ARCHIVE_RAW_KEEP_MS=6000000,ARCHIVE_RAW_BUCKET_MS=1000,MAX_BROWSER_RAW_FETCH_LIMIT=512,HISTORY_SCALE_KEY='solarMonitorHistoryScaleV1',HISTORY_SCALES={s1:{id:'1s',label:'1s',gridMs:1000,windowMs:10000,source:'raw'},s3:{id:'3s',label:'3s',gridMs:3000,windowMs:30000,source:'raw'},s10:{id:'10s',label:'10s',gridMs:10000,windowMs:100000,source:'raw'},m1:{id:'1min',label:'1min',gridMs:60000,windowMs:600000,source:'raw'},m10:{id:'10min',label:'10min',gridMs:600000,windowMs:6000000,source:'raw'}},yAxisRanges={power:null,voltage:null,current:null},lastRendered={points:[],viewStartMs:0,viewEndMs:0,sourceMode:'raw-live',scaleId:'1s'},zoomSelection={active:false,chartId:'',startPx:0,endPx:0};
+    let maxPts=300,chartReady=false,lastUpdate=Date.now(),lastConfigRefreshMs=0,pollMs=1000,pollTimer=null,rawPollMs=900,rawPollTimer=null,rawFetchBusy=false,archiveFetchBusy=false,archiveLastFetchMs=0,rawCursorSeq=0,batteryPresets=[],serverFormDirty=false,serverFormSaving=false,flowFormDirty=false,flowFormSaving=false,ledFormDirty=false,ledFormSaving=false,ledLiveTimer=null,ledSaveTimer=null,historyScale='1s',historyCapacityMax=600,runtimeReportMs=1000,runtimeSensorPollMs=1,runtimeRawEspCapacity=2048,runtimeRawFetchLimit=256,runtimeArchiveEspCapacity=600,runtimeArchiveIntervalMs=10000,runtimeMeasuredHz=0,runtimeInaAvg=1,viewFollowLive=true,viewStartMs=0,viewEndMs=0,yAxisLocked=false,archiveRawBucket=null;
+    const charts={},trendHistory=[],archiveHistory=[],minuteHistory=[],rawHistory=[],SOLAR='#f59e0b',BAT='#10b981',BAT_DIS='#ef4444',COMBO='#a855f7',MUTED='#4a6080',WARN='#ef4444',LOAD='#38bdf8',TREND_HISTORY_LIMIT=1800,RAW_HISTORY_KEEP_MS=600000,ARCHIVE_RAW_KEEP_MS=6000000,ARCHIVE_RAW_BUCKET_MS=1000,MAX_BROWSER_RAW_FETCH_LIMIT=256,HISTORY_SCALE_KEY='solarMonitorHistoryScaleV1',HISTORY_SCALES={s1:{id:'1s',label:'1s',gridMs:1000,windowMs:10000,source:'raw'},s3:{id:'3s',label:'3s',gridMs:3000,windowMs:30000,source:'raw'},s10:{id:'10s',label:'10s',gridMs:10000,windowMs:100000,source:'raw'},m1:{id:'1min',label:'1min',gridMs:60000,windowMs:600000,source:'raw'},m10:{id:'10min',label:'10min',gridMs:600000,windowMs:6000000,source:'raw'}},yAxisRanges={power:null,voltage:null,current:null},lastRendered={points:[],viewStartMs:0,viewEndMs:0,sourceMode:'raw-live',scaleId:'1s'},zoomSelection={active:false,chartId:'',startPx:0,endPx:0};
     function pad2(v){v=Math.max(0,Math.floor(Number(v)||0));return String(v).padStart(2,'0')}
     function pad3(v){v=Math.max(0,Math.floor(Number(v)||0));return String(v).padStart(3,'0')}
     function formatClockMs(ms){const d=new Date(Number(ms)||Date.now());return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds())+'.'+pad3(d.getMilliseconds())}
@@ -853,7 +852,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function sourceUsesStableRaw(mode){return sourceUsesLiveRaw(mode)||mode==='archive-raw'}
     function visibleWindowPointEstimate(scale,mode){if(sourceUsesLiveRaw(mode)||(!mode&&scale.source==='raw')){const hz=runtimeMeasuredHz>0?runtimeMeasuredHz:(1000/Math.max(1,runtimeSensorPollMs));return Math.max(1,Math.round(scale.windowMs*hz/1000))}if(mode==='archive-raw')return Math.max(1,Math.round((scale.windowMs*3)/Math.max(1,ARCHIVE_RAW_BUCKET_MS)));const archiveIntervalMs=mode==='minute-cache'?runtimeArchiveIntervalMs:runtimeReportMs;return Math.max(1,Math.round(scale.windowMs/Math.max(1,archiveIntervalMs)))}
     function measuredRawHz(){return runtimeMeasuredHz>0?runtimeMeasuredHz:(1000/Math.max(1,runtimeSensorPollMs))}
-    function computeRawPollMs(){const bufferWindowMs=Math.max(900,Math.round((runtimeRawEspCapacity*1000)/Math.max(1,measuredRawHz())));return Math.max(700,Math.min(1200,Math.round(bufferWindowMs/3)))}
+    function computeRawPollMs(){const bufferWindowMs=Math.max(1200,Math.round((runtimeRawEspCapacity*1000)/Math.max(1,measuredRawHz())));return Math.max(1000,Math.min(1600,Math.round(bufferWindowMs/2)))}
     function effectiveRawFetchLimit(){const predicted=Math.ceil((measuredRawHz()*Math.max(500,rawPollMs)/1000)*1.35),serverCap=Math.max(128,Number(runtimeRawFetchLimit)||128),hardCap=Math.max(128,Math.min(runtimeRawEspCapacity,MAX_BROWSER_RAW_FETCH_LIMIT,serverCap)),target=Math.max(128,predicted);return Math.max(128,Math.min(hardCap,Math.ceil(target/32)*32))}
     function saveHistoryScale(){try{localStorage.setItem(HISTORY_SCALE_KEY,historyScale)}catch(e){}}
     function loadHistoryScale(){try{const stored=localStorage.getItem(HISTORY_SCALE_KEY);if(stored==='1s'||stored==='3s'||stored==='10s'||stored==='1min'||stored==='10min')historyScale=stored}catch(e){}}
@@ -919,7 +918,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function renderWifiConfig(data,syncInputs){const ssid=data.wifi_ssid||'';if(syncInputs&&document.activeElement!==document.getElementById('wifi-ssid'))document.getElementById('wifi-ssid').value=ssid;if(syncInputs)document.getElementById('wifi-pass').value='';document.getElementById('wifi-note').textContent='Current SSID: '+(ssid||'--')+' | Mode: '+(data.wifi_mode||'--')}
     function renderInaConfig(data,syncInputs){const solar=Number(data.solar_shunt_milliohms),battery=Number(data.battery_shunt_milliohms),load=Number(data.load_shunt_milliohms);document.getElementById('solar-shunt-line').textContent='Shunt config: '+formatShunt(solar);document.getElementById('bat-shunt-line').textContent='INA shunt: '+formatShunt(battery);document.getElementById('load-shunt-line').textContent='Shunt config: '+formatShunt(load);document.getElementById('i2c-map-note').textContent='Map: '+(data.i2c_map||('0x40=INA3221, CH1=Solar '+formatShunt(solar)+', CH2=Battery '+formatShunt(battery)+', CH3=Load '+formatShunt(load)));if(syncInputs){if(document.activeElement!==document.getElementById('solar-shunt-mo'))document.getElementById('solar-shunt-mo').value=Number.isFinite(solar)?solar.toFixed(2):'';if(document.activeElement!==document.getElementById('bat-shunt-mo'))document.getElementById('bat-shunt-mo').value=Number.isFinite(battery)?battery.toFixed(2):'';if(document.activeElement!==document.getElementById('load-shunt-mo'))document.getElementById('load-shunt-mo').value=Number.isFinite(load)?load.toFixed(2):'';}}
     function clampChartPoints(v){v=Number(v);if(!Number.isFinite(v))v=300;return Math.max(30,Math.min(historyCapacityMax,Math.round(v)))}
-    function setSamplingPresetButtons(activeId){[['apply-sampling-safe-53','stable_53hz'],['apply-sampling-safe-100','stable_100hz']].forEach(pair=>{const button=document.getElementById(pair[0]);if(!button)return;button.className=activeId===pair[1]?'btn-primary':'btn-secondary'})}
+    function setSamplingPresetButtons(activeId){[['apply-sampling-stable','stable_60hz']].forEach(pair=>{const button=document.getElementById(pair[0]);if(!button)return;button.className=activeId===pair[1]?'btn-primary':'btn-secondary'})}
     function renderRuntimeConfig(data){const reportMs=Math.max(200,Number(data.sample_interval_ms)||2000),telemetryMs=Math.max(200,Number(data.telemetry_capture_interval_ms)||Math.min(reportMs,1000)),sensorPollMs=Math.max(1,Number(data.sensor_poll_interval_ms)||19),historyMs=Math.max(10,Number(data.history_interval_ms)||1000),secondsCap=Math.max(30,Number(data.history_seconds_capacity||data.history_capacity)||600),archiveCap=Math.max(60,Number(data.history_minutes_capacity)||600),archiveIntervalMs=Math.max(1000,Number(data.history_minutes_interval_ms)||10000),rawChartPts=Number(data.chart_point_limit)||120,inaAvg=Math.max(1,Number(data.ina_averaging_samples)||1),inaBusUs=Math.max(140,Number(data.ina_bus_conv_us)||140),inaShuntUs=Math.max(140,Number(data.ina_shunt_conv_us)||140),theoryHz=Number(data.ina_estimated_channel_hz)||0,measuredHz=Number(data.sensor_measured_hz)||0,rawEspCapacity=Math.max(1,Number(data.raw_history_capacity)||2048),rawFetchLimit=Math.max(32,Number(data.raw_history_fetch_limit)||256),regHex=data.ina_config_register_hex||'0x7007',profileId=data.sampling_profile_id||'custom',profileLabel=data.sampling_profile_label||'Custom',profileSummary=data.sampling_profile_summary||'Mode custom aktif.',profileSafe=!!data.sampling_profile_safe,presetTargetHz=Math.max(0,Number(data.sampling_profile_target_hz)||0);historyCapacityMax=Math.max(secondsCap,rawEspCapacity,archiveCap,2000);const chartPts=clampChartPoints(rawChartPts);if(document.activeElement!==document.getElementById('cfg-sensor-poll'))document.getElementById('cfg-sensor-poll').value=sensorPollMs;if(document.activeElement!==document.getElementById('cfg-interval'))document.getElementById('cfg-interval').value=reportMs;if(document.activeElement!==document.getElementById('cfg-history-interval'))document.getElementById('cfg-history-interval').value=historyMs;if(document.activeElement!==document.getElementById('cfg-chart-points'))document.getElementById('cfg-chart-points').value=chartPts;document.getElementById('cfg-ina-avg').value=String(inaAvg);document.getElementById('cfg-ina-bus-us').value=String(inaBusUs);document.getElementById('cfg-ina-shunt-us').value=String(inaShuntUs);runtimeReportMs=reportMs;runtimeSensorPollMs=sensorPollMs;runtimeRawEspCapacity=rawEspCapacity;runtimeRawFetchLimit=rawFetchLimit;runtimeArchiveEspCapacity=archiveCap;runtimeArchiveIntervalMs=archiveIntervalMs;runtimeMeasuredHz=measuredHz;runtimeInaAvg=inaAvg;maxPts=chartPts;setRawPollMs(computeRawPollMs());document.getElementById('sampling-profile-line').textContent='Mode: '+profileLabel+(profileId!=='custom'&&presetTargetHz>0?(' | target ~'+presetTargetHz+' Hz'):'');document.getElementById('sampling-profile-note').textContent=profileSummary+(profileSafe?' | beginner friendly':' | advanced custom');document.getElementById('sampling-runtime-brief').textContent='Sensor poll '+sensorPollMs+' ms | UI report '+reportMs+' ms | Backend '+telemetryMs+' ms | History '+historyMs+' ms';document.getElementById('interval-note').textContent='Raw fetch '+rawPollMs+' ms / '+effectiveRawFetchLimit()+' pts | Trend chart '+chartPts+' pts | ESP raw '+rawEspCapacity+' pts | Raw 10m '+formatHistorySpan(RAW_HISTORY_KEEP_MS)+' | Raw 100m '+formatHistorySpan(ARCHIVE_RAW_KEEP_MS);document.getElementById('runtime-ina-note').textContent='INA '+regHex+' | avg x'+inaAvg+' | bus '+inaBusUs+' us | shunt '+inaShuntUs+' us | theory '+(theoryHz?theoryHz.toFixed(1):'0.0')+' Hz | measured '+(measuredHz?measuredHz.toFixed(1):'0.0')+' Hz';setSamplingPresetButtons(profileId);renderHistoryFromBrowser()}
     function maybeFetchMinuteHistory(force){const scale=activeHistoryScale();if(scale.id!=='10min')return;if(rawBrowserHistorySpanMs()>=scale.windowMs||archiveRawSpanMs()>=scale.windowMs)return;fetchArchiveHistory(force)}
     function markFlowFormDirty(){flowFormDirty=true;document.getElementById('save-flow').textContent='Save Flow Thresholds *';document.getElementById('flow-edit-note').textContent='Unsaved flow threshold changes pending.'}
@@ -943,12 +942,13 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function waitForCharts(){const t=setInterval(()=>{if(typeof Chart!=='undefined'){clearInterval(t);registerChartPlugins();charts.power=new Chart(document.getElementById('powerChart').getContext('2d'),mkCfg('Solar Power (mW)','Battery Power (mW)','Load Power (mW)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));charts.voltage=new Chart(document.getElementById('voltageChart').getContext('2d'),mkCfg('Solar Voltage (V)','Battery Voltage (V)','Load Voltage (V)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));charts.current=new Chart(document.getElementById('currentChart').getContext('2d'),mkCfg('Solar Current (mA)','Battery Current (mA)','Load Current (mA)',SOLAR,BAT,LOAD,'rgba(245,158,11,0.08)','rgba(16,185,129,0.08)','rgba(56,189,248,0.06)'));chartReady=true;installChartInteractions();updateYAxisLockButton();updateLiveLogsButton();renderHistoryFromBrowser()}},150)}
     function updateFlowEfficiency(d){const a=d.analysis||{},mode=a.analysis_mode||'unavailable',balanceValid=!!a.balance_valid,pctLoad=Math.max(0,Number(a.pct_load)||0),pctBat=Math.max(0,Number(a.pct_bat)||0),pctLoss=Math.max(0,Number(a.pct_loss)||0),showBatterySink=mode==='solar_input'&&pctBat>.05,panel=document.querySelector('.flow-eff');const modeColor=mode==='solar_input'?SOLAR:mode==='battery_input'?BAT_DIS:mode==='mixed_input'?COMBO:MUTED;let effColor=MUTED;setText('flow-eff-mode',analysisModeText(mode),modeColor);if(balanceValid){const eff=Math.max(0,Math.min(100,Number(a.efficiency_pct)||0));effColor=eff>80?BAT:eff>60?SOLAR:WARN;setText('flow-eff-val',eff.toFixed(1)+'%',effColor);setText('flow-eff-loss','Loss '+fmt(a.p_loss_mw,0)+' mW',WARN);document.getElementById('flow-mini-load').style.width=pctLoad.toFixed(1)+'%';document.getElementById('flow-mini-load').style.opacity='1';document.getElementById('flow-mini-loss').style.width=pctLoss.toFixed(1)+'%';document.getElementById('flow-mini-loss').style.opacity='1';if(showBatterySink){document.getElementById('flow-mini-bat').style.width=pctBat.toFixed(1)+'%';document.getElementById('flow-mini-bat').style.opacity='1';setText('flow-mini-bat-txt',pctBat.toFixed(1)+'%',BAT)}else{document.getElementById('flow-mini-bat').style.width='0%';document.getElementById('flow-mini-bat').style.opacity='.14';setText('flow-mini-bat-txt','--',MUTED)}setText('flow-mini-load-txt',pctLoad.toFixed(1)+'%',LOAD);setText('flow-mini-loss-txt',pctLoss.toFixed(1)+'%',WARN);if(panel){panel.style.borderColor=effColor+'55';panel.style.boxShadow='inset 0 0 0 1px rgba(0,0,0,0), 0 0 0 rgba(0,0,0,0)'}}else{setText('flow-eff-val','N/A',MUTED);setText('flow-eff-loss','Loss N/A',MUTED);['flow-mini-load','flow-mini-bat','flow-mini-loss'].forEach(id=>{document.getElementById(id).style.width='0%';document.getElementById(id).style.opacity='.28'});setText('flow-mini-load-txt','--',MUTED);setText('flow-mini-bat-txt','--',MUTED);setText('flow-mini-loss-txt','--',MUTED);if(panel)panel.style.borderColor='var(--border)'}}
     function updateAnalysis(d){const a=d.analysis||{},s=d.solar||{},b=d.battery||{},l=d.load||{},mode=a.analysis_mode||'unavailable',batSigned=Number(d.battery_power_signed_mw)||0,balanceValid=!!a.balance_valid,batteryValid=!!(a.battery_estimate_valid&&b.ok),effArc=document.getElementById('eff-arc');const pctLoad=Math.max(0,Number(a.pct_load)||0),pctBat=Math.max(0,Number(a.pct_bat)||0),pctLoss=Math.max(0,Number(a.pct_loss)||0),showBatterySink=mode==='solar_input'&&pctBat>.05;const modeColor=mode==='solar_input'?SOLAR:mode==='battery_input'?BAT_DIS:mode==='mixed_input'?COMBO:MUTED;let effColor=MUTED;setText('analysis-mode',analysisModeText(mode),modeColor);if(balanceValid){const eff=Math.max(0,Math.min(100,Number(a.efficiency_pct)||0));effColor=eff>80?BAT:eff>60?SOLAR:WARN;effArc.style.strokeDashoffset=(201.1*(1-eff/100)).toFixed(1);effArc.setAttribute('stroke',effColor);setText('eff-pct',eff.toFixed(1)+'%',effColor);document.getElementById('bar-load').style.width=pctLoad.toFixed(1)+'%';document.getElementById('bar-loss').style.width=pctLoss.toFixed(1)+'%';document.getElementById('bar-load').style.opacity='1';document.getElementById('bar-loss').style.opacity='1';if(showBatterySink){document.getElementById('bar-bat').style.width=pctBat.toFixed(1)+'%';document.getElementById('bar-bat').style.opacity='1';setText('leg-bat-pct',pctBat.toFixed(1)+'%')}else{document.getElementById('bar-bat').style.width='0%';document.getElementById('bar-bat').style.opacity='.14';setText('leg-bat-pct','--')}setText('leg-load-pct',pctLoad.toFixed(1)+'%');setText('leg-loss-pct',pctLoss.toFixed(1)+'%');setText('leg-loss-mw',fmt(a.p_loss_mw,0)+' mW',WARN)}else{effArc.style.strokeDashoffset='201.1';effArc.setAttribute('stroke',MUTED);setText('eff-pct','N/A',MUTED);['bar-load','bar-bat','bar-loss'].forEach(id=>{document.getElementById(id).style.width='0%';document.getElementById(id).style.opacity='.28'});setText('leg-load-pct','--');setText('leg-bat-pct','--');setText('leg-loss-pct','--');setText('leg-loss-mw','N/A',MUTED)}setText('leg-load-mw',l.ok?fmt(l.power_mw,0)+' mW':'N/A',l.ok?LOAD:MUTED);setText('leg-bat-mw',b.ok?Math.abs(batSigned).toFixed(0)+' mW':'N/A',b.ok?(batSigned<0?BAT:batSigned>0?BAT_DIS:MUTED):MUTED);document.getElementById('ldot-bat').style.background=b.ok?(batSigned>0?BAT_DIS:BAT):MUTED;setText('an-p-solar',s.ok?fmt(s.power_mw,0)+' mW':'N/A',s.ok?SOLAR:MUTED);setText('an-iv-solar',s.ok?(fmt(s.current_ma,1)+' mA @ '+fmt(s.voltage,2)+' V'):'N/A');setText('an-p-load',l.ok?fmt(l.power_mw,0)+' mW':'N/A',l.ok?LOAD:MUTED);setText('an-iv-load',l.ok?(fmt(l.current_ma,1)+' mA @ '+fmt(l.voltage,2)+' V'):'N/A');let batLabel='Battery N/A',batColor=MUTED,batValue='N/A',batInfo='N/A';if(b.ok){if((d.battery_direction||'unknown')==='charging'){batLabel='Battery Charging';batColor=BAT}else if((d.battery_direction||'unknown')==='discharging'){batLabel='Battery Discharging';batColor=BAT_DIS}else{batLabel='Battery Idle';batColor=MUTED}batValue=fmtSigned(batSigned,0)+' mW';batInfo=fmtSigned(b.current_ma,1)+' mA @ '+fmt(b.voltage,2)+' V'}setText('an-bat-lbl',batLabel);setText('an-p-bat',batValue,batColor);setText('an-iv-bat',batInfo);setText('an-p-loss',balanceValid?fmt(a.p_loss_mw,0)+' mW':'N/A',balanceValid?WARN:MUTED);const dur=Number(a.session_duration_ms)||0,hh=Math.floor(dur/3600000),mm=Math.floor((dur%3600000)/60000),ss=Math.floor((dur%60000)/1000);setText('session-dur',String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0'),'#10b981');setText('s-solar',(Number(a.session_solar_wh)||0).toFixed(3)+' Wh','#f59e0b');setText('s-load',(Number(a.session_load_wh)||0).toFixed(3)+' Wh','#38bdf8');setText('s-bat',(Number(a.session_bat_in_wh!=null?a.session_bat_in_wh:a.session_bat_wh)||0).toFixed(3)+' Wh','#10b981');setText('s-bat-out',(Number(a.session_bat_out_wh)||0).toFixed(3)+' Wh',BAT_DIS);setText('s-loss',(Number(a.session_loss_wh)||0).toFixed(3)+' Wh','#ef4444');if(batteryValid){setText('b-crate',(Number(a.c_rate)||0).toFixed(2)+'C',BAT);document.getElementById('crate-fill').style.width=Math.min(100,(Number(a.c_rate)||0)*100).toFixed(0)+'%';document.getElementById('crate-fill').style.background=BAT;setText('b-full',Number(a.est_full_h)>0?formatHours(a.est_full_h):'N/A',BAT);setText('b-run',Number(a.est_runtime_h)>0?formatHours(a.est_runtime_h):'N/A',SOLAR)}else{setText('b-crate','N/A',MUTED);document.getElementById('crate-fill').style.width='0%';setText('b-full','N/A',MUTED);setText('b-run','N/A',MUTED)}setText('b-cap',(d.battery_capacity_mah||2000)+' mAh','var(--muted)');setText('b-avg-eff',balanceValid?(Number(a.efficiency_pct)||0).toFixed(1)+'%':'N/A',balanceValid?effColor:MUTED)}
-    async function fetchRawHistory(){if(rawFetchBusy)return;rawFetchBusy=true;let statusNote='';const fetchLimit=effectiveRawFetchLimit();try{let loops=0;while(loops<3){const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),2500),url='/api/history/live?after_seq='+rawCursorSeq+'&limit='+fetchLimit,r=await fetch(url,{signal:ctrl.signal});clearTimeout(tid);const data=await r.json();if(data&&data.overflowed)statusNote='Raw buffer gap detected on ESP; browser FIFO history preserved and newest samples appended.';const appended=appendRawHistoryBatch(Array.isArray(data&&data.points)?data.points:[]);if(appended===0||!data.truncated)break;loops++}if(activeHistoryScale().source==='raw'||statusNote)renderHistoryFromBrowser(statusNote||undefined)}catch(e){}finally{rawFetchBusy=false;scheduleRawPoll()}}
+    async function fetchRawHistory(){if(rawFetchBusy)return;rawFetchBusy=true;let statusNote='';const fetchLimit=effectiveRawFetchLimit();try{let loops=0;while(loops<2){const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),2500),url='/api/history/live?after_seq='+rawCursorSeq+'&limit='+fetchLimit,r=await fetch(url,{signal:ctrl.signal});clearTimeout(tid);const data=await r.json();if(data&&data.overflowed)statusNote='Raw buffer gap detected on ESP; browser FIFO history preserved and newest samples appended.';const appended=appendRawHistoryBatch(Array.isArray(data&&data.points)?data.points:[]);if(appended===0||!data.truncated)break;loops++}if(activeHistoryScale().source==='raw'||statusNote)renderHistoryFromBrowser(statusNote||undefined)}catch(e){}finally{rawFetchBusy=false;scheduleRawPoll()}}
     async function fetchArchiveHistory(force){if(archiveFetchBusy)return;const minAge=Math.max(5000,Math.min(30000,runtimeArchiveIntervalMs));if(!force&&(Date.now()-archiveLastFetchMs)<minAge)return;archiveFetchBusy=true;archiveLastFetchMs=Date.now();try{const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),3000),url='/api/history?view=minutes&limit='+Math.max(60,runtimeArchiveEspCapacity),r=await fetch(url,{signal:ctrl.signal});clearTimeout(tid);const data=await r.json(),points=Array.isArray(data&&data.points)?data.points:[];minuteHistory.length=0;points.forEach(item=>minuteHistory.push(normalizeArchivePoint(item)));if(!archiveHistory.length)renderHistoryFromBrowser()}catch(e){}finally{archiveFetchBusy=false}}
     async function fetchConfig(){
       try{
         const r=await fetch('/api/config');
         const c=await r.json();
+        lastConfigRefreshMs=Date.now();
         document.getElementById('cfg-device').value=c.device_id||'';
         document.getElementById('cfg-line').value=c.line_id||'';
         document.getElementById('ota-en').checked=!!c.ota_enabled;
@@ -981,7 +981,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     async function fetchData(){
       try{
         const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),3000);
-        const r=await fetch('/api/status',{signal:ctrl.signal});
+        const r=await fetch('/api/status?lite=1',{signal:ctrl.signal});
         clearTimeout(tid);
         const d=await r.json(),loadActive=!!d.load_active,loadOk=!!(d.load&&d.load.ok),batPctValid=!!d.battery_percent_valid,batPct=Number(d.battery_percent)||0,batArcText=batPctValid?(Math.round(batPct)+'%'):'N/A',batPctColor=batPctValid?(batPct>80?BAT:batPct>60?SOLAR:WARN):MUTED,batArcColor=!d.battery.ok?WARN:(d.battery_direction==='charging'?BAT:d.battery_direction==='discharging'?BAT_DIS:batPctColor);
         setPoll(d.sample_interval_ms||pollMs);
@@ -1015,23 +1015,11 @@ const char kDashboardHtml[] PROGMEM = R"dash(
         document.getElementById('flow-detail').textContent=d.sensor_health||'OK';
         document.getElementById('flow-warn').textContent=d.visual_warning||'';
         setBadge(d.state,d.state_label||d.state);
-        document.getElementById('ip').textContent=d.ip||'--';
-        document.getElementById('hdr-mode').textContent=d.wifi_mode||'--';
-        document.getElementById('hdr-device').textContent=d.device_id||'--';
         document.getElementById('hdr-interval').textContent=(d.sample_interval_ms||pollMs)+' ms report';
-        document.getElementById('fw').textContent='Firmware '+(d.firmware_version||'--')+(d.release_label?(' '+d.release_label):'');
-        document.getElementById('build-stamp').textContent=d.build_stamp||'--';
-        document.getElementById('ota-info').textContent='Host: '+(d.ota_hostname||'-')+' | Port: '+(d.ota_port||3232)+' | '+(d.ota_message||'-');
-        if(document.getElementById('b-cap'))document.getElementById('b-cap').textContent=(d.battery_capacity_mah||2000)+' mAh';
         appendTrendHistorySample(d);
-        renderRuntimeConfig(d);
         maybeFetchMinuteHistory(!minuteHistory.length);
-        renderWifiConfig(d,false);
-        renderInaConfig(d,false);
-        renderFlowThresholdConfig(d);
-        renderLedPwmConfig(d);
         renderSenderStatus(d);
-        document.title='Solar Monitor '+(d.firmware_version||'--')+' '+(d.device_id||'');
+        if((Date.now()-lastConfigRefreshMs)>30000)fetchConfig();
         lastUpdate=Date.now();
       }catch(e){
         document.getElementById('live-dot').className='live-dot error';
@@ -1067,8 +1055,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
       setInterval(()=>{document.getElementById('last-upd').textContent=((Date.now()-lastUpdate)/1000).toFixed(1)+'s ago'},500);
       document.getElementById('save-wifi').onclick=saveWifiConfig;
       document.getElementById('save-device').onclick=saveDeviceConfig;
-      document.getElementById('apply-sampling-safe-53').onclick=()=>applySamplingProfile('stable_53hz');
-      document.getElementById('apply-sampling-safe-100').onclick=()=>applySamplingProfile('stable_100hz');
+      document.getElementById('apply-sampling-stable').onclick=()=>applySamplingProfile('stable_60hz');
       document.getElementById('apply-interval').onclick=saveRuntimeConfig;
       document.getElementById('save-solar-shunt').onclick=()=>saveInaConfig('solar');
       document.getElementById('save-bat-shunt').onclick=()=>saveInaConfig('battery');
@@ -1227,6 +1214,7 @@ void WebUi::handleHealth_() {
 void WebUi::handleStatus_() {
   DynamicJsonDocument doc(9216);
   const DeviceConfig& config = wifiService_.config();
+  const bool lite = argIsTruthy(server_.arg("lite"));
   const bool solarActive = isSolarActive(sensors_.solar(), config);
   const bool loadActive = isLoadActive(sensors_.load(), config);
   const BatteryDirection batteryDirection = evaluateBatteryDirection(sensors_.battery(), config);
@@ -1247,27 +1235,9 @@ void WebUi::handleStatus_() {
 
   doc["timestamp_ms"] = millis();
   doc["uptime_ms"] = millis();
-  doc["firmware_version"] = FirmwareInfo::kVersion;
-  doc["release_label"] = FirmwareInfo::kReleaseLabel;
-  doc["build_date"] = FirmwareInfo::kBuildDate;
-  doc["build_time"] = FirmwareInfo::kBuildTime;
-  doc["build_stamp"] = FirmwareInfo::kBuildStamp;
-  doc["device_id"] = wifiService_.config().deviceId;
-  doc["line_id"] = wifiService_.config().lineId;
-  doc["ip"] = wifiService_.ipAddress();
-  doc["wifi_mode"] = wifiService_.wifiModeName();
-  doc["wifi_ssid"] = config.wifiSsid;
   doc["state"] = powerSystemStateToText(currentState_);
   doc["state_label"] = powerSystemStateToLabel(currentState_);
-  doc["ota_enabled"] = wifiService_.config().otaEnabled;
-  doc["ota_port"] = Config::kArduinoOtaPort;
-  doc["ota_hostname"] = wifiService_.config().deviceId;
-  doc["ota_ready"] = otaService_.isRuntimeActive();
-  doc["ota_runtime_active"] = otaService_.isRuntimeActive();
-  doc["ota_state"] = otaService_.stateText();
-  doc["ota_message"] = otaService_.messageText();
   doc["sensor_health"] = sensorHealthText(sensors_.solar(), sensors_.battery(), sensors_.load());
-  doc["i2c_map"] = buildInaMapText(config);
   doc["solar_active"] = solarActive;
   doc["load_active"] = loadActive;
   doc["battery_direction"] = batteryDirectionToText(batteryDirection);
@@ -1279,19 +1249,41 @@ void WebUi::handleStatus_() {
   doc["battery_percent"] = batteryPercent;
   doc["battery_percent_valid"] = batteryPercentValid;
   doc["api_key_configured"] = !config.apiKey.isEmpty();
-  doc["wifi_sta_connected"] = wifiService_.isStaConnected();
-  doc["free_heap_bytes"] = ESP.getFreeHeap();
-  doc["min_free_heap_bytes"] = ESP.getMinFreeHeap();
+  if (!lite) {
+    doc["firmware_version"] = FirmwareInfo::kVersion;
+    doc["release_label"] = FirmwareInfo::kReleaseLabel;
+    doc["build_date"] = FirmwareInfo::kBuildDate;
+    doc["build_time"] = FirmwareInfo::kBuildTime;
+    doc["build_stamp"] = FirmwareInfo::kBuildStamp;
+    doc["device_id"] = wifiService_.config().deviceId;
+    doc["line_id"] = wifiService_.config().lineId;
+    doc["ip"] = wifiService_.ipAddress();
+    doc["wifi_mode"] = wifiService_.wifiModeName();
+    doc["wifi_ssid"] = config.wifiSsid;
+    doc["ota_enabled"] = wifiService_.config().otaEnabled;
+    doc["ota_port"] = Config::kArduinoOtaPort;
+    doc["ota_hostname"] = wifiService_.config().deviceId;
+    doc["ota_ready"] = otaService_.isRuntimeActive();
+    doc["ota_runtime_active"] = otaService_.isRuntimeActive();
+    doc["ota_state"] = otaService_.stateText();
+    doc["ota_message"] = otaService_.messageText();
+    doc["i2c_map"] = buildInaMapText(config);
+    doc["wifi_sta_connected"] = wifiService_.isStaConnected();
+    doc["free_heap_bytes"] = ESP.getFreeHeap();
+    doc["min_free_heap_bytes"] = ESP.getMinFreeHeap();
+  }
   JsonObject statusRoot = doc.as<JsonObject>();
-  appendResetReason(statusRoot);
-  appendWifiRuntimeStatus(statusRoot, wifiService_);
-  appendRuntimeConfig(
-      statusRoot, config, sensors_, rawHistoryBuffer_, historyBuffer_, minuteHistoryBuffer_);
   appendBatteryProfileFields(statusRoot, config);
-  appendInaConfig(statusRoot, config);
-  appendFlowThresholdConfig(statusRoot, config);
-  appendLedPwmConfig(statusRoot, config, ledPwmController_.runtime());
   appendBackendSenderStatus(statusRoot, senderRuntime);
+  if (!lite) {
+    appendResetReason(statusRoot);
+    appendWifiRuntimeStatus(statusRoot, wifiService_);
+    appendRuntimeConfig(
+        statusRoot, config, sensors_, rawHistoryBuffer_, historyBuffer_, minuteHistoryBuffer_);
+    appendInaConfig(statusRoot, config);
+    appendFlowThresholdConfig(statusRoot, config);
+    appendLedPwmConfig(statusRoot, config, ledPwmController_.runtime());
+  }
 
   JsonObject solarObject = doc.createNestedObject("solar");
   appendReading(solarObject, sensors_.solar());

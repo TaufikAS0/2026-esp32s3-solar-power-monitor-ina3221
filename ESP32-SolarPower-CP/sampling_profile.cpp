@@ -3,14 +3,14 @@
 namespace {
 
 constexpr SamplingProfilePreset kSamplingProfiles[] = {
-    {"stable_53hz",
-     "Stable 53 Hz",
-     "Mode aman untuk soak telemetry, raw history browser, dan setup beginner.",
-     53U,
-     2000U,
-     19U,
+    {"stable_60hz",
+     "Stable Mode 60 Hz",
+     "Satu tombol mode stabil: backend 1 detik, dashboard lebih ringan, dan target mendekati 60 Hz.",
+     60U,
+     3000U,
+     16U,
      1000U,
-     120U,
+     90U,
      1U,
      140U,
      140U,

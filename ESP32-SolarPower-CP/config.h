@@ -19,9 +19,9 @@ constexpr uint16_t kDefaultIna3221ConfigValue = 0x7007;
 constexpr uint32_t kDefaultInaAveragingSamples = 1;
 constexpr uint32_t kDefaultInaBusConvTimeUs = 140;
 constexpr uint32_t kDefaultInaShuntConvTimeUs = 140;
-constexpr float kSolarShuntMilliOhms = 5.0f;
+constexpr float kSolarShuntMilliOhms = 10.0f;
 constexpr float kBatteryShuntMilliOhms = 5.0f;
-constexpr float kLoadShuntMilliOhms = 10.0f;
+constexpr float kLoadShuntMilliOhms = 5.0f;
 constexpr float kMinShuntMilliOhms = 0.1f;
 constexpr float kMaxShuntMilliOhms = 1000.0f;
 
@@ -48,10 +48,10 @@ constexpr uint32_t kLedPwmFlashDefaultPeriodMs = 500;
 constexpr uint32_t kLedPwmFlashMinPeriodMs = 1;
 constexpr uint32_t kLedPwmFlashMaxPeriodMs = 60000;
 
-constexpr uint32_t kDefaultSensorPollIntervalMs = 19;
+constexpr uint32_t kDefaultSensorPollIntervalMs = 16;
 constexpr uint32_t kMinSensorPollIntervalMs = 1;
 constexpr uint32_t kMaxSensorPollIntervalMs = 60000;
-constexpr uint32_t kDefaultSampleIntervalMs = 2000;
+constexpr uint32_t kDefaultSampleIntervalMs = 3000;
 constexpr uint32_t kMinSampleIntervalMs = 200;
 constexpr uint32_t kMaxSampleIntervalMs = 60000;
 constexpr uint32_t kMaxBackendCaptureIntervalMs = 1000;
@@ -59,7 +59,7 @@ constexpr uint32_t kDefaultHistoryIntervalMs = 1000;
 constexpr uint32_t kMinHistoryIntervalMs = 10;
 constexpr uint32_t kMaxHistoryIntervalMs = 60000;
 constexpr uint32_t kMinuteHistoryIntervalMs = 10000;
-constexpr uint32_t kDefaultChartPointLimit = 120;
+constexpr uint32_t kDefaultChartPointLimit = 90;
 constexpr uint32_t kMinChartPointLimit = 30;
 constexpr uint32_t kMaxChartPointLimit = 2000;
 constexpr uint32_t kSerialReportIntervalMs = 1000;
@@ -70,7 +70,7 @@ constexpr uint16_t kArduinoOtaPort = 3232;
 
 constexpr size_t kHistoryCapacity = 600;
 constexpr size_t kRawHistoryCapacity = 2048;
-constexpr uint32_t kRawHistoryFetchLimit = 256;
+constexpr uint32_t kRawHistoryFetchLimit = 128;
 constexpr size_t kBackendQueueCapacity = 32;
 constexpr size_t kBackendBatchMaxSamples = 4;
 
@@ -81,9 +81,10 @@ constexpr uint32_t kBackendResponseTimeoutMs = 650;
 constexpr uint32_t kBackendRetryMinMs = 3000;
 constexpr uint32_t kBackendRetryMaxMs = 30000;
 constexpr uint32_t kBackendSenderRolloutVersion = 2;
+constexpr uint32_t kShuntRuntimeRolloutVersion = 1;
 constexpr uint32_t kInaRuntimeRolloutVersion = 1;
-constexpr uint32_t kSamplingRuntimeRolloutVersion = 1;
-constexpr char kDefaultSamplingProfileId[] = "stable_53hz";
+constexpr uint32_t kSamplingRuntimeRolloutVersion = 2;
+constexpr char kDefaultSamplingProfileId[] = "stable_60hz";
 
 constexpr uint16_t kBatteryCapacityMah = 2000;
 constexpr uint32_t kBatteryProfileMinMv = 500;

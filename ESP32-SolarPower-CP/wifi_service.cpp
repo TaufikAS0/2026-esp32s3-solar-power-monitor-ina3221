@@ -414,6 +414,20 @@ void WifiService::loadConfig_() {
     saveUInt_("sender_rollout_v1", Config::kBackendSenderRolloutVersion);
   }
 
+  const uint32_t shuntRolloutVersion = preferences_.getUInt("shunt_runtime_rollout_v1", 0);
+  if (shuntRolloutVersion < Config::kShuntRuntimeRolloutVersion) {
+    const bool looksLikeLegacyShuntDefaults =
+        fabsf(config_.solarShuntMilliOhms - 5.0f) < 0.01f &&
+        fabsf(config_.loadShuntMilliOhms - 10.0f) < 0.01f;
+    if (looksLikeLegacyShuntDefaults) {
+      config_.solarShuntMilliOhms = Config::kSolarShuntMilliOhms;
+      config_.loadShuntMilliOhms = Config::kLoadShuntMilliOhms;
+      saveFloat_("shunt_solar_mo", config_.solarShuntMilliOhms);
+      saveFloat_("shunt_load_mo", config_.loadShuntMilliOhms);
+    }
+    saveUInt_("shunt_runtime_rollout_v1", Config::kShuntRuntimeRolloutVersion);
+  }
+
   const uint32_t inaRolloutVersion = preferences_.getUInt("ina_runtime_rollout_v1", 0);
   if (inaRolloutVersion < Config::kInaRuntimeRolloutVersion) {
     config_.inaAveragingSamples = Config::kDefaultInaAveragingSamples;
@@ -424,13 +438,23 @@ void WifiService::loadConfig_() {
   const uint32_t samplingRolloutVersion =
       preferences_.getUInt("sampling_runtime_rollout_v1", 0);
   if (samplingRolloutVersion < Config::kSamplingRuntimeRolloutVersion) {
+    const bool looksLikeFormerSafePreset =
+        (config_.sampleIntervalMs == 2000U && config_.sensorPollIntervalMs == 19U &&
+         config_.historyIntervalMs == 1000U && config_.chartPointLimit == 120U &&
+         config_.inaAveragingSamples == 1U && config_.inaBusConvTimeUs == 140U &&
+         config_.inaShuntConvTimeUs == 140U) ||
+        (config_.sampleIntervalMs == 1500U && config_.sensorPollIntervalMs == 10U &&
+         config_.historyIntervalMs == 500U && config_.chartPointLimit == 160U &&
+         config_.inaAveragingSamples == 1U && config_.inaBusConvTimeUs == 140U &&
+         config_.inaShuntConvTimeUs == 140U);
     if (looksLikeLegacyAggressiveSamplingConfig(config_.sampleIntervalMs,
                                                 config_.sensorPollIntervalMs,
                                                 config_.historyIntervalMs,
                                                 config_.chartPointLimit,
                                                 config_.inaAveragingSamples,
                                                 config_.inaBusConvTimeUs,
-                                                config_.inaShuntConvTimeUs)) {
+                                                config_.inaShuntConvTimeUs) ||
+        looksLikeFormerSafePreset) {
       const SamplingProfilePreset* preset =
           findSamplingProfilePreset(Config::kDefaultSamplingProfileId);
       if (preset != nullptr) {
