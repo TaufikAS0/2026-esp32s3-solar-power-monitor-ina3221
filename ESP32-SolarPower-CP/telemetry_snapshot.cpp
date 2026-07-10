@@ -118,7 +118,8 @@ void captureTelemetryFrame(TelemetryFrame& frame,
   frame.batteryDirection = evaluateBatteryDirection(battery, config);
   frame.batteryPowerSignedMw = computeBatteryPowerSignedMw(battery, config);
   frame.visualMode = evaluateVisualMode(solar, battery, config);
-  frame.sampleIntervalMs = config.sampleIntervalMs;
+  frame.sampleIntervalMs =
+      Config::resolvedBackendCaptureIntervalMs(config.sampleIntervalMs);
   frame.batteryFullMv = config.batteryFullMv;
   frame.batteryEmptyMv = config.batteryEmptyMv;
   frame.batteryPercentValid =

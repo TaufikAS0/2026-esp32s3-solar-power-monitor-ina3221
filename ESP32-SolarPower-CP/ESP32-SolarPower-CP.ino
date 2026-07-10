@@ -138,7 +138,9 @@ void updateHistory(uint32_t nowMs) {
 }
 
 void updateBackendCapture(uint32_t nowMs) {
-  if (nowMs - gLastBackendCaptureMs < gWifiService.config().sampleIntervalMs) {
+  const uint32_t telemetryIntervalMs =
+      Config::resolvedBackendCaptureIntervalMs(gWifiService.config().sampleIntervalMs);
+  if (nowMs - gLastBackendCaptureMs < telemetryIntervalMs) {
     return;
   }
 

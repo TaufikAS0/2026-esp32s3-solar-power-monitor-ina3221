@@ -54,6 +54,7 @@ constexpr uint32_t kMaxSensorPollIntervalMs = 60000;
 constexpr uint32_t kDefaultSampleIntervalMs = 2000;
 constexpr uint32_t kMinSampleIntervalMs = 200;
 constexpr uint32_t kMaxSampleIntervalMs = 60000;
+constexpr uint32_t kMaxBackendCaptureIntervalMs = 1000;
 constexpr uint32_t kDefaultHistoryIntervalMs = 1000;
 constexpr uint32_t kMinHistoryIntervalMs = 10;
 constexpr uint32_t kMaxHistoryIntervalMs = 60000;
@@ -102,6 +103,14 @@ constexpr char kDefaultApiBase[] = "http://127.0.0.1:8000/api/v1";
 constexpr char kBackendSchemaVersion[] = "solar-backend-r01";
 constexpr char kBackendSourceMode[] = "esp32";
 constexpr char kBackendHeartbeatScenario[] = "live_device";
+
+constexpr uint32_t resolvedBackendCaptureIntervalMs(uint32_t reportIntervalMs) {
+  if (reportIntervalMs < kMinSampleIntervalMs) {
+    return kMinSampleIntervalMs;
+  }
+  return reportIntervalMs > kMaxBackendCaptureIntervalMs ? kMaxBackendCaptureIntervalMs
+                                                         : reportIntervalMs;
+}
 
 }  // namespace Config
 
