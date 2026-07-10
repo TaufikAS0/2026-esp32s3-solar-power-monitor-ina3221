@@ -257,6 +257,18 @@ bool WifiService::saveLedPwmConfig(bool enabled,
   return true;
 }
 
+bool WifiService::saveControlPinScheduleConfig(bool enabled,
+                                               uint32_t offHour,
+                                               uint32_t offMinute) {
+  config_.controlPinScheduleEnabled = enabled;
+  config_.controlPinOffHour = normalizeControlPinOffHour_(offHour);
+  config_.controlPinOffMinute = normalizeControlPinOffMinute_(offMinute);
+  saveBool_("ctrl_pin_sched_en", config_.controlPinScheduleEnabled);
+  saveUInt_("ctrl_pin_off_h", config_.controlPinOffHour);
+  saveUInt_("ctrl_pin_off_m", config_.controlPinOffMinute);
+  return true;
+}
+
 bool WifiService::saveBackendConfig(bool enabled,
                                     const String& apiBase,
                                     const String& apiKey,
@@ -373,6 +385,14 @@ void WifiService::loadConfig_() {
       normalizeLedPwmFlashPeriodMs_(storedLedPwmFlashPeriodMs == UINT32_MAX
                                         ? Config::kLedPwmFlashDefaultPeriodMs
                                         : storedLedPwmFlashPeriodMs);
+  config_.controlPinScheduleEnabled =
+      preferences_.getBool("ctrl_pin_sched_en", Config::kControlPinScheduleDefaultEnabled);
+  config_.controlPinOffHour =
+      normalizeControlPinOffHour_(preferences_.getUInt("ctrl_pin_off_h",
+                                                       Config::kControlPinScheduleDefaultOffHour));
+  config_.controlPinOffMinute =
+      normalizeControlPinOffMinute_(preferences_.getUInt("ctrl_pin_off_m",
+                                                         Config::kControlPinScheduleDefaultOffMinute));
   if (config_.ledPwmFlashOnMs > config_.ledPwmFlashPeriodMs) {
     config_.ledPwmFlashOnMs = config_.ledPwmFlashPeriodMs;
   }
@@ -719,6 +739,30 @@ uint32_t WifiService::normalizeLedPwmFlashPeriodMs_(uint32_t value) const {
 
   if (value > Config::kLedPwmFlashMaxPeriodMs) {
     return Config::kLedPwmFlashMaxPeriodMs;
+  }
+
+  return value;
+}
+
+uint32_t WifiService::normalizeControlPinOffHour_(uint32_t value) const {
+  if (value < Config::kControlPinScheduleMinHour) {
+    return Config::kControlPinScheduleMinHour;
+  }
+
+  if (value > Config::kControlPinScheduleMaxHour) {
+    return Config::kControlPinScheduleMaxHour;
+  }
+
+  return value;
+}
+
+uint32_t WifiService::normalizeControlPinOffMinute_(uint32_t value) const {
+  if (value < Config::kControlPinScheduleMinMinute) {
+    return Config::kControlPinScheduleMinMinute;
+  }
+
+  if (value > Config::kControlPinScheduleMaxMinute) {
+    return Config::kControlPinScheduleMaxMinute;
   }
 
   return value;

@@ -38,6 +38,9 @@ struct DeviceConfig {
   bool ledPwmFlashEnabled = Config::kLedPwmFlashDefaultEnabled;
   uint32_t ledPwmFlashOnMs = Config::kLedPwmFlashDefaultOnMs;
   uint32_t ledPwmFlashPeriodMs = Config::kLedPwmFlashDefaultPeriodMs;
+  bool controlPinScheduleEnabled = Config::kControlPinScheduleDefaultEnabled;
+  uint32_t controlPinOffHour = Config::kControlPinScheduleDefaultOffHour;
+  uint32_t controlPinOffMinute = Config::kControlPinScheduleDefaultOffMinute;
 };
 
 struct WifiRuntime {
@@ -102,6 +105,9 @@ public:
                         bool flashEnabled,
                         uint32_t flashOnMs,
                         uint32_t flashPeriodMs);
+  bool saveControlPinScheduleConfig(bool enabled,
+                                    uint32_t offHour,
+                                    uint32_t offMinute);
   bool saveBackendConfig(bool enabled,
                          const String& apiBase,
                          const String& apiKey,
@@ -142,6 +148,8 @@ private:
   uint32_t normalizeLedPwmDutyPercent_(uint32_t value) const;
   uint32_t normalizeLedPwmFlashOnMs_(uint32_t value) const;
   uint32_t normalizeLedPwmFlashPeriodMs_(uint32_t value) const;
+  uint32_t normalizeControlPinOffHour_(uint32_t value) const;
+  uint32_t normalizeControlPinOffMinute_(uint32_t value) const;
   float normalizeShuntMilliOhms_(float value, float fallbackValue) const;
 };
 

@@ -7,6 +7,7 @@
 #include "history_buffer.h"
 #include "i2c_scanner.h"
 #include "ina_sensors.h"
+#include "internet_time_service.h"
 #include "led_pwm_controller.h"
 #include "raw_history_buffer.h"
 #include "analysis_engine.h"
@@ -25,6 +26,7 @@ public:
         AnalysisSnapshot& analysis,
         I2cScanner& i2cScanner,
         SerialPinControl& serialPinControl,
+        InternetTimeService& internetTimeService,
         RawHistoryBuffer& rawHistoryBuffer,
         HistoryBuffer& historyBuffer,
         HistoryBuffer& minuteHistoryBuffer,
@@ -43,6 +45,7 @@ private:
   AnalysisSnapshot& analysis_;
   I2cScanner& i2cScanner_;
   SerialPinControl& serialPinControl_;
+  InternetTimeService& internetTimeService_;
   RawHistoryBuffer& rawHistoryBuffer_;
   HistoryBuffer& historyBuffer_;
   HistoryBuffer& minuteHistoryBuffer_;
@@ -67,6 +70,7 @@ private:
   void handleSaveLedPwm_();
   void handleControlLedPwm_();
   void handleControlSerialPin_();
+  void handleSaveControlPinConfig_();
   void handleSaveBattery_();
   void handleAnalysisReset_();
   void handleReboot_();

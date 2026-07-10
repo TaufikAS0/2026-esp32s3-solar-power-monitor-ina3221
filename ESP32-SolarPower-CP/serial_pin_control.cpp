@@ -1,6 +1,8 @@
 #include "serial_pin_control.h"
 
 #include "config.h"
+#include "internet_time_service.h"
+#include "wifi_service.h"
 
 namespace {
 
@@ -21,6 +23,10 @@ bool isStatusCommand(const String& command) {
 
 bool isHelpCommand(const String& command) {
   return command == "HELP" || command == "CMD" || command == "COMMANDS";
+}
+
+int32_t buildScheduleDayKey(const tm& localTime) {
+  return (localTime.tm_year + 1900) * 1000 + localTime.tm_yday;
 }
 
 }  // namespace
@@ -58,6 +64,48 @@ void SerialPinControl::update() {
 
 void SerialPinControl::setHigh(bool high) {
   setState_(high);
+}
+
+void SerialPinControl::applyScheduledOff(const DeviceConfig& config,
+                                         const InternetTimeService& timeService,
+                                         uint32_t nowMs) {
+  if (!config.controlPinScheduleEnabled || !timeService.isTimeValid()) {
+    return;
+  }
+
+  tm localTime;
+  if (!timeService.getLocalTimeStruct(localTime)) {
+    return;
+  }
+
+  const int32_t dayKey = buildScheduleDayKey(localTime);
+  if (dayKey == lastScheduleDayKey_) {
+    return;
+  }
+
+  const uint32_t currentMinuteOfDay =
+      static_cast<uint32_t>(localTime.tm_hour * 60 + localTime.tm_min);
+  const uint32_t targetMinuteOfDay = config.controlPinOffHour * 60U + config.controlPinOffMinute;
+  if (currentMinuteOfDay < targetMinuteOfDay) {
+    return;
+  }
+
+  lastScheduleDayKey_ = dayKey;
+  if (!stateHigh_) {
+    Serial.printf("[serial-pin][%lu] schedule %02lu:%02lu reached, GPIO%u already OFF\n",
+                  static_cast<unsigned long>(nowMs),
+                  static_cast<unsigned long>(config.controlPinOffHour),
+                  static_cast<unsigned long>(config.controlPinOffMinute),
+                  static_cast<unsigned int>(Config::kSerialControlPin));
+    return;
+  }
+
+  setState_(false);
+  Serial.printf("[serial-pin][%lu] auto OFF schedule %02lu:%02lu local time reached on GPIO%u\n",
+                static_cast<unsigned long>(nowMs),
+                static_cast<unsigned long>(config.controlPinOffHour),
+                static_cast<unsigned long>(config.controlPinOffMinute),
+                static_cast<unsigned int>(Config::kSerialControlPin));
 }
 
 uint8_t SerialPinControl::pin() const {

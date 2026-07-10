@@ -228,10 +228,58 @@ void appendLedPwmConfig(JsonObject object,
   object["led_pwm_signal_duty_percent"] = runtime.signalDutyPercent;
 }
 
-void appendSerialPinControlStatus(JsonObject object, const SerialPinControl& serialPinControl) {
+String formatHourMinute(uint32_t hour, uint32_t minute) {
+  char buffer[6];
+  snprintf(buffer,
+           sizeof(buffer),
+           "%02lu:%02lu",
+           static_cast<unsigned long>(hour),
+           static_cast<unsigned long>(minute));
+  return String(buffer);
+}
+
+bool parseHourMinute(const String& value, uint32_t& hour, uint32_t& minute) {
+  const int separatorIndex = value.indexOf(':');
+  if (separatorIndex <= 0 || separatorIndex >= value.length() - 1) {
+    return false;
+  }
+
+  const uint32_t parsedHour = static_cast<uint32_t>(value.substring(0, separatorIndex).toInt());
+  const uint32_t parsedMinute =
+      static_cast<uint32_t>(value.substring(separatorIndex + 1).toInt());
+  if (parsedHour > Config::kControlPinScheduleMaxHour ||
+      parsedMinute > Config::kControlPinScheduleMaxMinute) {
+    return false;
+  }
+
+  hour = parsedHour;
+  minute = parsedMinute;
+  return true;
+}
+
+void appendInternetTimeStatus(JsonObject object, const InternetTimeService& internetTimeService) {
+  object["time_sync_state"] = internetTimeService.statusText();
+  object["time_sync_valid"] = internetTimeService.isTimeValid();
+  object["time_sync_local_text"] = internetTimeService.currentLocalTimeText();
+  const InternetTimeStatus& runtime = internetTimeService.runtime();
+  object["time_sync_wifi_connected"] = runtime.wifiConnected;
+  object["time_sync_last_configure_ms"] = runtime.lastConfigureMs;
+  object["time_sync_last_valid_ms"] = runtime.lastValidSyncMs;
+  object["time_sync_attempts"] = runtime.configureAttempts;
+  object["time_sync_last_epoch"] = static_cast<int64_t>(runtime.lastEpoch);
+}
+
+void appendSerialPinControlStatus(JsonObject object,
+                                  const SerialPinControl& serialPinControl,
+                                  const DeviceConfig& config) {
   object["control_pin_gpio"] = serialPinControl.pin();
   object["control_pin_state"] = serialPinControl.stateText();
   object["control_pin_state_high"] = serialPinControl.isHigh();
+  object["control_pin_schedule_enabled"] = config.controlPinScheduleEnabled;
+  object["control_pin_off_hour"] = config.controlPinOffHour;
+  object["control_pin_off_minute"] = config.controlPinOffMinute;
+  object["control_pin_off_time"] = formatHourMinute(config.controlPinOffHour,
+                                                    config.controlPinOffMinute);
 }
 
 bool argIsTruthy(const String& value) {
@@ -804,15 +852,24 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     </div>
 
     <div class="card">
-      <div class="lbl">GPIO Live Output</div>
-      <div class="sub" style="margin-bottom:10px">Kontrol pin helper langsung dari web dashboard. Status ini sama dengan yang muncul di Serial Monitor.</div>
-      <div class="sub" id="ctrl-pin-meta" style="margin-bottom:8px">GPIO17 | Live output control</div>
-      <div class="sub" id="ctrl-pin-state" style="margin-bottom:10px">State: OFF / LOW</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <button class="btn-primary" id="ctrl-pin-on" type="button">Set HIGH / ON</button>
-        <button class="btn-secondary" id="ctrl-pin-off" type="button">Set LOW / OFF</button>
+      <div class="lbl">Bypass Power Control</div>
+      <div class="sub" style="margin-bottom:10px">GPIO17 dipakai sebagai bypass power supply helper. Bisa dikontrol manual dan bisa auto OFF harian memakai internet time.</div>
+      <div class="sub" id="ctrl-pin-meta" style="margin-bottom:8px">GPIO17 | Bypass power output</div>
+      <div class="sub" id="ctrl-pin-state" style="margin-bottom:8px">State: OFF / LOW</div>
+      <div class="sub" id="ctrl-pin-time-sync" style="margin-bottom:8px">Time sync: -- | Local time: --</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <button class="btn-primary" id="ctrl-pin-on" type="button">Bypass ON</button>
+        <button class="btn-secondary" id="ctrl-pin-off" type="button">Bypass OFF</button>
       </div>
-      <div class="sub" id="ctrl-pin-note" style="margin-top:8px;color:var(--muted)">Live only. Boot default tetap LOW.</div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:8px;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:#0a1220">
+        <input type="checkbox" id="ctrl-pin-schedule-enable" style="accent-color:var(--blue);width:18px;height:18px;flex:0 0 18px">
+        <span class="sub">Enable daily auto OFF by internet time</span>
+      </label>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <input class="inp" id="ctrl-pin-off-time" type="time" value="06:00" style="flex:1">
+        <button class="btn-secondary" id="save-ctrl-pin-config" type="button" style="flex:0 0 auto">Save Schedule</button>
+      </div>
+      <div class="sub" id="ctrl-pin-note" style="margin-top:6px;color:var(--muted)">Boot default tetap LOW. Scheduler akan memaksa OFF sekali per hari setelah jam target tercapai.</div>
     </div>
 
     <div class="card">
@@ -864,6 +921,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     const charts={},trendHistory=[],archiveHistory=[],minuteHistory=[],rawHistory=[],SOLAR='#f59e0b',BAT='#10b981',BAT_DIS='#ef4444',COMBO='#a855f7',MUTED='#4a6080',WARN='#ef4444',LOAD='#38bdf8',TREND_HISTORY_LIMIT=1800,RAW_HISTORY_KEEP_MS=600000,ARCHIVE_RAW_KEEP_MS=6000000,ARCHIVE_RAW_BUCKET_MS=1000,MAX_BROWSER_RAW_FETCH_LIMIT=256,HISTORY_SCALE_KEY='solarMonitorHistoryScaleV1',HISTORY_SCALES={s1:{id:'1s',label:'1s',gridMs:1000,windowMs:10000,source:'raw'},s3:{id:'3s',label:'3s',gridMs:3000,windowMs:30000,source:'raw'},s10:{id:'10s',label:'10s',gridMs:10000,windowMs:100000,source:'raw'},m1:{id:'1min',label:'1min',gridMs:60000,windowMs:600000,source:'raw'},m10:{id:'10min',label:'10min',gridMs:600000,windowMs:6000000,source:'raw'}},yAxisRanges={power:null,voltage:null,current:null},lastRendered={points:[],viewStartMs:0,viewEndMs:0,sourceMode:'trend-archive',scaleId:'1min'},zoomSelection={active:false,chartId:'',startPx:0,endPx:0};
     function pad2(v){v=Math.max(0,Math.floor(Number(v)||0));return String(v).padStart(2,'0')}
     function pad3(v){v=Math.max(0,Math.floor(Number(v)||0));return String(v).padStart(3,'0')}
+    function formatHm(hour,minute){return pad2(hour)+':'+pad2(minute)}
     function formatClockMs(ms){const d=new Date(Number(ms)||Date.now());return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds())+'.'+pad3(d.getMilliseconds())}
     function formatHistoryTick(value){const seconds=Math.abs(Number(value)||0);if(seconds<0.001)return'now';if(seconds>=60){const minutes=seconds/60;return'-'+(Math.abs(minutes-Math.round(minutes))<0.01?Math.round(minutes):minutes.toFixed(1))+'m'}return'-'+(Math.abs(seconds-Math.round(seconds))<0.01?Math.round(seconds):seconds.toFixed(1))+'s'}
     function createChartOptions(){return{animation:false,responsive:true,maintainAspectRatio:false,interaction:{mode:'nearest',intersect:false},plugins:{legend:{labels:{color:'#4a6080',font:{family:'Courier New',size:10}}},tooltip:{callbacks:{title:items=>{const raw=items&&items.length?items[0].raw:null;return raw&&Number.isFinite(Number(raw.t))?formatClockMs(raw.t):'Time n/a'},footer:items=>{const raw=items&&items.length?items[0].raw:null;if(!raw)return'';const seq=Number.isFinite(Number(raw.seq))?('Seq '+Math.round(Number(raw.seq))):'';const rel=Number.isFinite(Number(raw.x))?(Math.abs(Number(raw.x))<0.0005?'now':((Number(raw.x)<0?'-':'+')+Math.abs(Number(raw.x)).toFixed(3)+' s')):'';return seq&&rel?(seq+' | '+rel):(seq||rel)}}}},scales:{x:{type:'linear',display:true,min:-10,max:0,grid:{display:true,color:'#1e2d42'},ticks:{color:'#4a6080',font:{family:'Courier New',size:10},stepSize:1,maxTicksLimit:11,maxRotation:0,minRotation:0,callback:value=>formatHistoryTick(value)}},y:{grid:{color:'#1e2d42'},ticks:{color:'#4a6080',font:{family:'Courier New',size:10}}}}}}
@@ -965,7 +1023,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     function markLedPwmFormDirty(msg){ledFormDirty=true;document.getElementById('apply-led-pwm').textContent='Save LED PWM Now';document.getElementById('led-pwm-edit-note').textContent=msg||'Live apply active. Applying and auto-saving...'}
     function clearLedPwmFormDirty(msg){ledFormDirty=false;ledFormSaving=false;document.getElementById('apply-led-pwm').textContent='Save LED PWM Now';document.getElementById('led-pwm-edit-note').textContent=msg||'Live control active. Auto-save after you stop sliding.'}
     function renderLedPwmConfig(data){const pin=Number(data.led_pwm_pin)||18,res=Number(data.led_pwm_resolution_bits)||12,freq=Math.max(100,Number(data.led_pwm_frequency_hz)||100),duty=clampLedDuty(data.led_pwm_duty_percent),enabled=!!data.led_pwm_enabled,inverted=!!data.led_pwm_inverted,flashEnabled=!!data.led_pwm_flash_enabled,flashOnMs=clampLedFlashOn(data.led_pwm_flash_on_ms),flashPeriodMs=Math.max(flashOnMs,clampLedFlashPeriod(data.led_pwm_flash_period_ms)),attached=('led_pwm_attached' in data)?!!data.led_pwm_attached:true,signalPct=Number(data.led_pwm_signal_duty_percent),brightnessActive=('led_pwm_brightness_active' in data)?!!data.led_pwm_brightness_active:enabled,flashOutputOn=('led_pwm_flash_output_on' in data)?!!data.led_pwm_flash_output_on:false,flashCycleMs=Math.max(0,Math.round(Number(data.led_pwm_flash_cycle_ms)||0));if(!ledFormDirty&&!ledFormSaving){document.getElementById('led-pwm-enable').checked=enabled;document.getElementById('led-pwm-flash-enable').checked=flashEnabled;document.getElementById('led-pwm-invert').checked=inverted;document.getElementById('led-pwm-freq').value=freq;document.getElementById('led-pwm-duty').value=duty;document.getElementById('led-pwm-duty-num').value=duty;document.getElementById('led-pwm-flash-on').value=flashOnMs;document.getElementById('led-pwm-flash-period').value=flashPeriodMs}document.getElementById('led-pwm-meta').textContent='GPIO'+pin+' | '+res+'-bit | '+freq+' Hz';document.getElementById('led-pwm-duty-note').textContent='Brightness: '+duty+'%';document.getElementById('led-pwm-flash-note').textContent=flashEnabled?('Flashing: '+flashOnMs+' ms ON every '+flashPeriodMs+' ms'):('Flashing off | preset '+flashOnMs+' ms ON every '+flashPeriodMs+' ms');document.getElementById('led-pwm-status').textContent=(enabled?(flashEnabled?'PWM flashing':'PWM active'):'PWM idle')+' | signal '+(Number.isFinite(signalPct)?signalPct.toFixed(1):'--')+'%'+(inverted?' | inverted':'')+(flashEnabled?(' | flash '+(flashOutputOn?'ON':'OFF')+' '+flashCycleMs+'/'+flashPeriodMs+' ms'):'')+(brightnessActive&&!flashEnabled?' | output on':'')+(attached?'':' | attach failed')}
-    function renderSerialPinControl(data){const pin=Number(data.control_pin_gpio)||17,isHigh=!!data.control_pin_state_high,stateText=(data.control_pin_state|| (isHigh?'ON':'OFF'));document.getElementById('ctrl-pin-meta').textContent='GPIO'+pin+' | Live output control';document.getElementById('ctrl-pin-state').textContent='State: '+stateText+' / '+(isHigh?'HIGH':'LOW');document.getElementById('ctrl-pin-state').style.color=isHigh?BAT:MUTED;document.getElementById('ctrl-pin-on').disabled=isHigh;document.getElementById('ctrl-pin-off').disabled=!isHigh;document.getElementById('ctrl-pin-note').textContent=isHigh?'Output aktif HIGH dari GPIO'+pin:'Output idle LOW dari GPIO'+pin}
+    function renderSerialPinControl(data){const pin=Number(data.control_pin_gpio)||17,isHigh=!!data.control_pin_state_high,stateText=(data.control_pin_state|| (isHigh?'ON':'OFF')),scheduleEnabled=!!data.control_pin_schedule_enabled,offHour=Math.max(0,Math.min(23,Number(data.control_pin_off_hour)||6)),offMinute=Math.max(0,Math.min(59,Number(data.control_pin_off_minute)||0)),offTime=data.control_pin_off_time||formatHm(offHour,offMinute),timeState=data.time_sync_state||'idle',timeValid=!!data.time_sync_valid,timeText=data.time_sync_local_text||'sync pending';document.getElementById('ctrl-pin-meta').textContent='GPIO'+pin+' | Bypass power output';document.getElementById('ctrl-pin-state').textContent='State: '+stateText+' / '+(isHigh?'HIGH':'LOW');document.getElementById('ctrl-pin-state').style.color=isHigh?BAT:MUTED;document.getElementById('ctrl-pin-time-sync').textContent='Time sync: '+timeState+' | Local time: '+timeText;document.getElementById('ctrl-pin-on').disabled=isHigh;document.getElementById('ctrl-pin-off').disabled=!isHigh;document.getElementById('ctrl-pin-schedule-enable').checked=scheduleEnabled;if(document.activeElement!==document.getElementById('ctrl-pin-off-time'))document.getElementById('ctrl-pin-off-time').value=offTime;document.getElementById('ctrl-pin-note').textContent=(isHigh?'Bypass aktif HIGH dari GPIO':'Bypass idle LOW dari GPIO')+pin+(scheduleEnabled?(' | auto OFF '+offTime+(timeValid?'':' | waiting internet time')):' | auto OFF disabled')}
     function renderSenderStatus(data){const enabled=('backend_sender_enabled' in data)?!!data.backend_sender_enabled:!!data.server_enabled,state=data.backend_sender_state|| (enabled?'idle':'disabled'),depth=Number(data.backend_queue_depth)||0,cap=Number(data.backend_queue_capacity)||32,dropped=Number(data.backend_dropped_samples)||0,retry=Number(data.backend_next_retry_in_ms)||0,http=data.backend_last_http_status?(' | HTTP '+data.backend_last_http_status):'',parts=[state.replace(/_/g,' ')];if(data.backend_last_error)parts.push(data.backend_last_error);if(retry>0)parts.push('retry in '+retry+' ms');if(!serverFormDirty&&!serverFormSaving){document.getElementById('srv-enable').checked=enabled;document.getElementById('srv-base').value=data.api_base||document.getElementById('srv-base').value||'';}document.getElementById('srv-key-note').textContent=data.api_key_configured?'API key stored on device':'API key empty';document.getElementById('srv-status').textContent=parts.join(' | ');document.getElementById('srv-queue').textContent='Queue: '+depth+' / '+cap+' | Dropped: '+dropped+http}
     function pointSeries(points,latestTimestampMs,key){return points.map(p=>({x:(Number(p.t)-latestTimestampMs)/1000,y:Number(p[key])||0,t:Number(p.t)||0,seq:Number(p.seq)||0}))}
     function applyYAxisRange(ch,axisKey){if(!ch)return;const range=yAxisLocked?yAxisRanges[axisKey]:null;if(range){ch.options.scales.y.min=range.min;ch.options.scales.y.max=range.max}else{delete ch.options.scales.y.min;delete ch.options.scales.y.max}}
@@ -1074,7 +1132,9 @@ const char kDashboardHtml[] PROGMEM = R"dash(
     async function applyLedPwmLive(){await applyLedPwmRequest('/api/control/led-pwm','LED PWM applied live',false)}
     async function saveLedPwm(manual){const ok=await applyLedPwmRequest('/api/config/led-pwm',manual?'LED PWM saved':'LED PWM auto-saved',true);if(ok){fetchConfig();fetchData()}}
     function scheduleLedPwmApply(){if(ledLiveTimer)clearTimeout(ledLiveTimer);ledLiveTimer=setTimeout(()=>applyLedPwmLive(),120);if(ledSaveTimer)clearTimeout(ledSaveTimer);ledSaveTimer=setTimeout(()=>saveLedPwm(false),700)}
-    async function applySerialPinState(state){document.getElementById('ctrl-pin-note').textContent='Applying GPIO output...';const body=new URLSearchParams();body.set('state',state);const r=await fetch('/api/control/serial-pin',{method:'POST',body});const d=await r.json();if(!r.ok){document.getElementById('ctrl-pin-note').textContent=d.error||'GPIO output update failed';alert(d.error||'GPIO output update failed');return}renderSerialPinControl(d)}
+    async function applySerialPinState(state){document.getElementById('ctrl-pin-note').textContent='Applying bypass output...';const body=new URLSearchParams();body.set('state',state);const r=await fetch('/api/control/serial-pin',{method:'POST',body});const d=await r.json();if(!r.ok){document.getElementById('ctrl-pin-note').textContent=d.error||'Bypass output update failed';alert(d.error||'Bypass output update failed');return}renderSerialPinControl(d)}
+    function buildControlPinConfigBody(){const body=new URLSearchParams(),raw=document.getElementById('ctrl-pin-off-time').value||'06:00',parts=raw.split(':');if(document.getElementById('ctrl-pin-schedule-enable').checked)body.set('control_pin_schedule_enabled','1');body.set('control_pin_off_hour',String(Number(parts[0])||0));body.set('control_pin_off_minute',String(Number(parts[1])||0));return body}
+    async function saveControlPinConfig(){document.getElementById('ctrl-pin-note').textContent='Saving bypass schedule...';const r=await fetch('/api/config/control-pin',{method:'POST',body:buildControlPinConfigBody()});const d=await r.json();if(!r.ok){document.getElementById('ctrl-pin-note').textContent=d.error||'Bypass schedule update failed';alert(d.error||'Bypass schedule update failed');return}renderSerialPinControl(d);fetchConfig();fetchData()}
     async function saveServerConfig(){serverFormSaving=true;document.getElementById('save-server').textContent='Saving Backend Sender...';const body=new URLSearchParams();if(document.getElementById('srv-enable').checked)body.set('server_enabled','1');body.set('api_base',document.getElementById('srv-base').value);const apiKey=document.getElementById('srv-key').value;if(apiKey)body.set('api_key',apiKey);if(document.getElementById('srv-key-clear').checked)body.set('clear_api_key','1');const r=await fetch('/api/config/server',{method:'POST',body});const d=await r.json();if(!r.ok){serverFormSaving=false;document.getElementById('save-server').textContent='Save Backend Sender *';alert(d.error||'Backend sender update failed');return}document.getElementById('srv-key').value='';document.getElementById('srv-key-clear').checked=false;clearServerFormDirty(d.message||'Backend sender updated');alert(d.message||'Backend sender updated');fetchConfig();fetchData()}
     async function saveBatteryProfile(){const body=new URLSearchParams();body.set('battery_profile_id',document.getElementById('bat-profile-sel').value);body.set('battery_full_voltage_v',document.getElementById('bat-full').value);body.set('battery_empty_voltage_v',document.getElementById('bat-empty').value);const r=await fetch('/api/config/battery',{method:'POST',body});const d=await r.json();if(!r.ok){alert(d.error||'Battery profile update failed');return}alert(d.message||'Battery profile saved');fetchConfig();fetchData()}
     async function applyOTA(){const body=new URLSearchParams();if(document.getElementById('ota-en').checked)body.set('ota_enabled','1');const r=await fetch('/api/config/ota',{method:'POST',body});const d=await r.json();alert(d.message||'OTA updated');fetchConfig();fetchData()}
@@ -1100,6 +1160,7 @@ const char kDashboardHtml[] PROGMEM = R"dash(
       document.getElementById('apply-led-pwm').onclick=()=>saveLedPwm(true);
       document.getElementById('ctrl-pin-on').onclick=()=>applySerialPinState('on');
       document.getElementById('ctrl-pin-off').onclick=()=>applySerialPinState('off');
+      document.getElementById('save-ctrl-pin-config').onclick=saveControlPinConfig;
       document.getElementById('save-server').onclick=saveServerConfig;
       document.getElementById('save-bat-profile').onclick=saveBatteryProfile;
       document.getElementById('toggle-solar-setup').onclick=()=>document.getElementById('solar-setup').classList.toggle('open');
@@ -1152,6 +1213,7 @@ WebUi::WebUi(WifiService& wifiService,
              AnalysisSnapshot& analysis,
              I2cScanner& i2cScanner,
              SerialPinControl& serialPinControl,
+             InternetTimeService& internetTimeService,
              RawHistoryBuffer& rawHistoryBuffer,
              HistoryBuffer& historyBuffer,
              HistoryBuffer& minuteHistoryBuffer,
@@ -1164,6 +1226,7 @@ WebUi::WebUi(WifiService& wifiService,
       analysis_(analysis),
       i2cScanner_(i2cScanner),
       serialPinControl_(serialPinControl),
+      internetTimeService_(internetTimeService),
       rawHistoryBuffer_(rawHistoryBuffer),
       historyBuffer_(historyBuffer),
       minuteHistoryBuffer_(minuteHistoryBuffer),
@@ -1197,6 +1260,7 @@ void WebUi::registerRoutes_() {
   server_.on("/api/config/led-pwm", HTTP_POST, [this]() { handleSaveLedPwm_(); });
   server_.on("/api/control/led-pwm", HTTP_POST, [this]() { handleControlLedPwm_(); });
   server_.on("/api/control/serial-pin", HTTP_POST, [this]() { handleControlSerialPin_(); });
+  server_.on("/api/config/control-pin", HTTP_POST, [this]() { handleSaveControlPinConfig_(); });
   server_.on("/api/config/battery", HTTP_POST, [this]() { handleSaveBattery_(); });
   server_.on("/api/config/ota", HTTP_POST, [this]() { handleSaveOta_(); });
   server_.on("/api/ota", HTTP_POST, [this]() { handleSaveOta_(); });
@@ -1216,7 +1280,7 @@ void WebUi::handleRoot_() {
 }
 
 void WebUi::handleHealth_() {
-  DynamicJsonDocument doc(2048);
+  DynamicJsonDocument doc(3072);
   const DeviceConfig& config = wifiService_.config();
   doc["ok"] = true;
   doc["timestamp_ms"] = millis();
@@ -1248,7 +1312,8 @@ void WebUi::handleHealth_() {
       healthRoot, config, sensors_, rawHistoryBuffer_, historyBuffer_, minuteHistoryBuffer_);
   appendInaConfig(healthRoot, config);
   appendLedPwmConfig(healthRoot, config, ledPwmController_.runtime());
-  appendSerialPinControlStatus(healthRoot, serialPinControl_);
+  appendInternetTimeStatus(healthRoot, internetTimeService_);
+  appendSerialPinControlStatus(healthRoot, serialPinControl_, config);
 
   String body;
   serializeJson(doc, body);
@@ -1293,7 +1358,8 @@ void WebUi::handleStatus_() {
   doc["battery_percent"] = batteryPercent;
   doc["battery_percent_valid"] = batteryPercentValid;
   doc["api_key_configured"] = !config.apiKey.isEmpty();
-  appendSerialPinControlStatus(doc.as<JsonObject>(), serialPinControl_);
+  appendInternetTimeStatus(doc.as<JsonObject>(), internetTimeService_);
+  appendSerialPinControlStatus(doc.as<JsonObject>(), serialPinControl_, config);
   if (!lite) {
     doc["firmware_version"] = FirmwareInfo::kVersion;
     doc["release_label"] = FirmwareInfo::kReleaseLabel;
@@ -1460,7 +1526,7 @@ void WebUi::handleI2cScan_() {
 }
 
 void WebUi::handleConfig_() {
-  DynamicJsonDocument doc(8192);
+  DynamicJsonDocument doc(10240);
   const DeviceConfig& config = wifiService_.config();
   doc["device_id"] = config.deviceId;
   doc["line_id"] = config.lineId;
@@ -1494,7 +1560,8 @@ void WebUi::handleConfig_() {
   appendInaConfig(configRoot, config);
   appendFlowThresholdConfig(configRoot, config);
   appendLedPwmConfig(configRoot, config, ledPwmController_.runtime());
-  appendSerialPinControlStatus(configRoot, serialPinControl_);
+  appendInternetTimeStatus(configRoot, internetTimeService_);
+  appendSerialPinControlStatus(configRoot, serialPinControl_, config);
   appendBackendSenderStatus(configRoot, backendSender_.runtimeSnapshot());
   JsonArray batteryPresets = doc.createNestedArray("battery_presets");
   appendBatteryPresets(batteryPresets);
@@ -1896,6 +1963,37 @@ void WebUi::handleControlLedPwm_() {
   server_.send(attached ? 200 : 500, "application/json", body);
 }
 
+void WebUi::handleSaveControlPinConfig_() {
+  const DeviceConfig& currentConfig = wifiService_.config();
+  const bool enabled = argIsTruthy(server_.arg("control_pin_schedule_enabled"));
+
+  uint32_t offHour =
+      server_.arg("control_pin_off_hour").isEmpty() ? currentConfig.controlPinOffHour
+                                                     : static_cast<uint32_t>(server_.arg("control_pin_off_hour").toInt());
+  uint32_t offMinute =
+      server_.arg("control_pin_off_minute").isEmpty() ? currentConfig.controlPinOffMinute
+                                                       : static_cast<uint32_t>(server_.arg("control_pin_off_minute").toInt());
+
+  const String offTimeRaw = server_.arg("control_pin_off_time");
+  if (!offTimeRaw.isEmpty() && !parseHourMinute(offTimeRaw, offHour, offMinute)) {
+    server_.send(400, "application/json", "{\"ok\":false,\"error\":\"control_pin_off_time must be HH:MM\"}");
+    return;
+  }
+
+  wifiService_.saveControlPinScheduleConfig(enabled, offHour, offMinute);
+
+  DynamicJsonDocument doc(1024);
+  doc["ok"] = true;
+  doc["message"] = enabled ? "Bypass auto OFF schedule saved" : "Bypass auto OFF schedule disabled";
+  JsonObject root = doc.as<JsonObject>();
+  appendInternetTimeStatus(root, internetTimeService_);
+  appendSerialPinControlStatus(root, serialPinControl_, wifiService_.config());
+
+  String body;
+  serializeJson(doc, body);
+  server_.send(200, "application/json", body);
+}
+
 void WebUi::handleControlSerialPin_() {
   String stateRaw = server_.arg("state");
   stateRaw.toLowerCase();
@@ -1919,10 +2017,12 @@ void WebUi::handleControlSerialPin_() {
   Serial.print(F(" -> "));
   Serial.println(serialPinControl_.stateText());
 
-  DynamicJsonDocument doc(384);
+  DynamicJsonDocument doc(768);
   doc["ok"] = true;
   doc["message"] = high ? "GPIO output set HIGH" : "GPIO output set LOW";
-  appendSerialPinControlStatus(doc.as<JsonObject>(), serialPinControl_);
+  JsonObject root = doc.as<JsonObject>();
+  appendInternetTimeStatus(root, internetTimeService_);
+  appendSerialPinControlStatus(root, serialPinControl_, wifiService_.config());
 
   String body;
   serializeJson(doc, body);

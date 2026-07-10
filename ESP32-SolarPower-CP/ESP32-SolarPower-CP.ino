@@ -4,6 +4,7 @@
 #include "history_buffer.h"
 #include "i2c_scanner.h"
 #include "ina_sensors.h"
+#include "internet_time_service.h"
 #include "led_pwm_controller.h"
 #include "ota_service.h"
 #include "power_logic.h"
@@ -28,6 +29,7 @@ HistoryBuffer gHistoryBuffer;
 HistoryBuffer gMinuteHistoryBuffer;
 SerialReporter gSerialReporter;
 SerialPinControl gSerialPinControl;
+InternetTimeService gInternetTimeService(gWifiService);
 PowerSystemState gCurrentState = PowerSystemState::SensorError;
 OtaService gOtaService(gWifiService);
 BackendSender gBackendSender(gWifiService, gOtaService, gInaSensors, gAnalysis, gCurrentState);
@@ -39,6 +41,7 @@ WebUi gWebUi(gWifiService,
              gAnalysis,
              gI2cScanner,
              gSerialPinControl,
+             gInternetTimeService,
              gRawHistoryBuffer,
              gHistoryBuffer,
              gMinuteHistoryBuffer,
@@ -162,6 +165,7 @@ void setup() {
   gSerialReporter.begin();
   gSerialPinControl.begin();
   gWifiService.begin();
+  gInternetTimeService.begin();
   gLedPwmController.begin(gWifiService.config());
   gInaSensors.applyConfig(gWifiService.config());
   gInaSensors.setSampleIntervalMs(gWifiService.config().sensorPollIntervalMs);
@@ -179,6 +183,8 @@ void loop() {
 
   gSerialPinControl.update();
   gWifiService.update(nowMs);
+  gInternetTimeService.update(nowMs);
+  gSerialPinControl.applyScheduledOff(gWifiService.config(), gInternetTimeService, nowMs);
   gLedPwmController.update(nowMs);
   const uint32_t previousReadMs = gInaSensors.lastReadMs();
   gInaSensors.update(nowMs);

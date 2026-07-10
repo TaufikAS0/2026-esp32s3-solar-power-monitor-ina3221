@@ -28,6 +28,11 @@ constexpr float kMaxShuntMilliOhms = 1000.0f;
 
 constexpr char kDefaultWifiSsid[] = "HardwareTest";
 constexpr char kDefaultWifiPass[] = "jayaabadi100";
+constexpr char kTimeZoneTz[] = "WIB-7";
+constexpr char kNtpServerPrimary[] = "pool.ntp.org";
+constexpr char kNtpServerSecondary[] = "time.google.com";
+constexpr char kNtpServerTertiary[] = "time.nist.gov";
+constexpr uint32_t kTimeSyncRetryMs = 60000;
 
 // Dedicated PWM output for LT3478 LED dim/control.
 constexpr uint8_t kLedPwmPin = 18;
@@ -48,6 +53,13 @@ constexpr uint32_t kLedPwmFlashMaxOnMs = 60000;
 constexpr uint32_t kLedPwmFlashDefaultPeriodMs = 500;
 constexpr uint32_t kLedPwmFlashMinPeriodMs = 1;
 constexpr uint32_t kLedPwmFlashMaxPeriodMs = 60000;
+constexpr bool kControlPinScheduleDefaultEnabled = false;
+constexpr uint32_t kControlPinScheduleDefaultOffHour = 6;
+constexpr uint32_t kControlPinScheduleDefaultOffMinute = 0;
+constexpr uint32_t kControlPinScheduleMinHour = 0;
+constexpr uint32_t kControlPinScheduleMaxHour = 23;
+constexpr uint32_t kControlPinScheduleMinMinute = 0;
+constexpr uint32_t kControlPinScheduleMaxMinute = 59;
 
 constexpr uint32_t kDefaultSensorPollIntervalMs = 16;
 constexpr uint32_t kMinSensorPollIntervalMs = 1;
