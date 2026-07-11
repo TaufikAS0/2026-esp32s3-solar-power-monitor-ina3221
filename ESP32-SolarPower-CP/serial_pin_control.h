@@ -9,7 +9,10 @@ class SerialPinControl {
 public:
   void begin();
   void update();
-  void setHigh(bool high);
+  void setHigh(bool high,
+               const DeviceConfig* config = nullptr,
+               const InternetTimeService* timeService = nullptr);
+  void resetScheduleState();
   void applyScheduledOff(const DeviceConfig& config,
                          const InternetTimeService& timeService,
                          uint32_t nowMs);

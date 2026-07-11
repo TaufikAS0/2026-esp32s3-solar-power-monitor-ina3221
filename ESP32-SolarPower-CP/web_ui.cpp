@@ -1981,6 +1981,8 @@ void WebUi::handleSaveControlPinConfig_() {
   }
 
   wifiService_.saveControlPinScheduleConfig(enabled, offHour, offMinute);
+  serialPinControl_.resetScheduleState();
+  serialPinControl_.applyScheduledOff(wifiService_.config(), internetTimeService_, millis());
 
   DynamicJsonDocument doc(1024);
   doc["ok"] = true;
@@ -2011,7 +2013,7 @@ void WebUi::handleControlSerialPin_() {
     return;
   }
 
-  serialPinControl_.setHigh(high);
+  serialPinControl_.setHigh(high, &wifiService_.config(), &internetTimeService_);
   Serial.print(F("[serial-pin] web GPIO"));
   Serial.print(serialPinControl_.pin());
   Serial.print(F(" -> "));
