@@ -137,6 +137,10 @@ void BackendSender::update(uint32_t) {
   // Transport work runs on the sender task so the main loop stays responsive.
 }
 
+void BackendSender::noteWebActivity(uint32_t nowMs) {
+  lastWebActivityMs_ = nowMs;
+}
+
 BackendSenderRuntime BackendSender::runtimeSnapshot() const {
   BackendSenderRuntime snapshot = runtime_;
   if (mutex_ == nullptr) {
@@ -208,6 +212,11 @@ void BackendSender::runTaskLoop_() {
         xSemaphoreGive(mutex_);
       }
       vTaskDelay(pdMS_TO_TICKS(100));
+      continue;
+    }
+
+    if (isWebActivityRecent_(nowMs)) {
+      vTaskDelay(pdMS_TO_TICKS(50));
       continue;
     }
 
@@ -431,6 +440,13 @@ String BackendSender::heartbeatEndpointUrl_(const DeviceConfig& config) const {
 bool BackendSender::canTransport_() const {
   return wifiService_.isStaConnected() && !wifiService_.config().apiBase.isEmpty() &&
          sensors_.lastReadMs() != 0;
+}
+
+bool BackendSender::isWebActivityRecent_(uint32_t nowMs) const {
+  const uint32_t lastActivityMs = lastWebActivityMs_;
+  return lastActivityMs != 0 &&
+         static_cast<int32_t>(nowMs - lastActivityMs) >= 0 &&
+         static_cast<uint32_t>(nowMs - lastActivityMs) < Config::kBackendUiPriorityQuietMs;
 }
 
 bool BackendSender::postJson_(const String& url,

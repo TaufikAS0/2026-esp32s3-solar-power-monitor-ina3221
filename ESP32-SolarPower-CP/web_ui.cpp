@@ -1242,31 +1242,31 @@ void WebUi::update() {
 }
 
 void WebUi::registerRoutes_() {
-  server_.on("/", HTTP_GET, [this]() { handleRoot_(); });
-  server_.on("/api/health", HTTP_GET, [this]() { handleHealth_(); });
-  server_.on("/api/status", HTTP_GET, [this]() { handleStatus_(); });
-  server_.on("/api/data", HTTP_GET, [this]() { handleStatus_(); });
-  server_.on("/api/history", HTTP_GET, [this]() { handleHistory_(); });
-  server_.on("/api/history/live", HTTP_GET, [this]() { handleLiveHistory_(); });
-  server_.on("/api/i2c/scan", HTTP_GET, [this]() { handleI2cScan_(); });
-  server_.on("/api/i2c-scan", HTTP_GET, [this]() { handleI2cScan_(); });
-  server_.on("/api/config", HTTP_GET, [this]() { handleConfig_(); });
-  server_.on("/api/config/wifi", HTTP_POST, [this]() { handleSaveWifi_(); });
-  server_.on("/api/config/ina", HTTP_POST, [this]() { handleSaveIna_(); });
-  server_.on("/api/config/device", HTTP_POST, [this]() { handleSaveDevice_(); });
-  server_.on("/api/config/flow", HTTP_POST, [this]() { handleSaveFlow_(); });
-  server_.on("/api/config/server", HTTP_POST, [this]() { handleSaveServer_(); });
-  server_.on("/api/config/runtime", HTTP_POST, [this]() { handleSaveRuntime_(); });
-  server_.on("/api/config/led-pwm", HTTP_POST, [this]() { handleSaveLedPwm_(); });
-  server_.on("/api/control/led-pwm", HTTP_POST, [this]() { handleControlLedPwm_(); });
-  server_.on("/api/control/serial-pin", HTTP_POST, [this]() { handleControlSerialPin_(); });
-  server_.on("/api/config/control-pin", HTTP_POST, [this]() { handleSaveControlPinConfig_(); });
-  server_.on("/api/config/battery", HTTP_POST, [this]() { handleSaveBattery_(); });
-  server_.on("/api/config/ota", HTTP_POST, [this]() { handleSaveOta_(); });
-  server_.on("/api/ota", HTTP_POST, [this]() { handleSaveOta_(); });
-  server_.on("/api/analysis/reset", HTTP_POST, [this]() { handleAnalysisReset_(); });
-  server_.on("/api/reboot", HTTP_POST, [this]() { handleReboot_(); });
-  server_.onNotFound([this]() { handleNotFound_(); });
+  server_.on("/", HTTP_GET, [this]() { backendSender_.noteWebActivity(millis()); handleRoot_(); });
+  server_.on("/api/health", HTTP_GET, [this]() { backendSender_.noteWebActivity(millis()); handleHealth_(); });
+  server_.on("/api/status", HTTP_GET, [this]() { backendSender_.noteWebActivity(millis()); handleStatus_(); });
+  server_.on("/api/data", HTTP_GET, [this]() { backendSender_.noteWebActivity(millis()); handleStatus_(); });
+  server_.on("/api/history", HTTP_GET, [this]() { backendSender_.noteWebActivity(millis()); handleHistory_(); });
+  server_.on("/api/history/live", HTTP_GET, [this]() { backendSender_.noteWebActivity(millis()); handleLiveHistory_(); });
+  server_.on("/api/i2c/scan", HTTP_GET, [this]() { backendSender_.noteWebActivity(millis()); handleI2cScan_(); });
+  server_.on("/api/i2c-scan", HTTP_GET, [this]() { backendSender_.noteWebActivity(millis()); handleI2cScan_(); });
+  server_.on("/api/config", HTTP_GET, [this]() { backendSender_.noteWebActivity(millis()); handleConfig_(); });
+  server_.on("/api/config/wifi", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleSaveWifi_(); });
+  server_.on("/api/config/ina", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleSaveIna_(); });
+  server_.on("/api/config/device", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleSaveDevice_(); });
+  server_.on("/api/config/flow", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleSaveFlow_(); });
+  server_.on("/api/config/server", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleSaveServer_(); });
+  server_.on("/api/config/runtime", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleSaveRuntime_(); });
+  server_.on("/api/config/led-pwm", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleSaveLedPwm_(); });
+  server_.on("/api/control/led-pwm", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleControlLedPwm_(); });
+  server_.on("/api/control/serial-pin", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleControlSerialPin_(); });
+  server_.on("/api/config/control-pin", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleSaveControlPinConfig_(); });
+  server_.on("/api/config/battery", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleSaveBattery_(); });
+  server_.on("/api/config/ota", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleSaveOta_(); });
+  server_.on("/api/ota", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleSaveOta_(); });
+  server_.on("/api/analysis/reset", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleAnalysisReset_(); });
+  server_.on("/api/reboot", HTTP_POST, [this]() { backendSender_.noteWebActivity(millis()); handleReboot_(); });
+  server_.onNotFound([this]() { backendSender_.noteWebActivity(millis()); handleNotFound_(); });
 }
 
 void WebUi::handleRoot_() {

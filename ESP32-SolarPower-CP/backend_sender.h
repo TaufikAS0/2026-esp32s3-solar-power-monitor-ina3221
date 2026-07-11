@@ -42,6 +42,7 @@ public:
   void begin();
   void captureSample(uint32_t nowMs);
   void update(uint32_t nowMs);
+  void noteWebActivity(uint32_t nowMs);
 
   BackendSenderRuntime runtimeSnapshot() const;
 
@@ -64,6 +65,7 @@ private:
   uint32_t lastHeartbeatAttemptMs_ = 0;
   uint8_t telemetryFailureStreak_ = 0;
   bool senderWasEnabled_ = false;
+  volatile uint32_t lastWebActivityMs_ = 0;
   String observedDeviceId_;
   String observedLineId_;
   String observedApiBase_;
@@ -87,6 +89,7 @@ private:
   String telemetryEndpointUrl_(const DeviceConfig& config) const;
   String heartbeatEndpointUrl_(const DeviceConfig& config) const;
   bool canTransport_() const;
+  bool isWebActivityRecent_(uint32_t nowMs) const;
   bool postJson_(const String& url,
                  const String& payload,
                  uint16_t& statusCode,

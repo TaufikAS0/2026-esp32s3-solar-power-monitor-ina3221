@@ -89,8 +89,9 @@ constexpr size_t kBackendBatchMaxSamples = 4;
 
 constexpr uint32_t kBackendTelemetryAttemptMs = 3000;
 constexpr uint32_t kBackendHeartbeatIntervalMs = 15000;
-constexpr uint32_t kBackendConnectTimeoutMs = 350;
-constexpr uint32_t kBackendResponseTimeoutMs = 650;
+constexpr uint32_t kBackendUiPriorityQuietMs = 1200;
+constexpr uint32_t kBackendConnectTimeoutMs = 200;
+constexpr uint32_t kBackendResponseTimeoutMs = 250;
 constexpr uint32_t kBackendRetryMinMs = 3000;
 constexpr uint32_t kBackendRetryMaxMs = 30000;
 constexpr uint32_t kBackendSenderRolloutVersion = 2;
